@@ -96,8 +96,8 @@ if __name__ == '__main__':
         
         if len(jobs) > 0:
             # job[0]
-            print('=== first job ====')
-            print(json.dumps(jobs[0], indent=4))
+            print('=== jobs ====')
+            print(json.dumps(jobs, indent=4))
             
             # job detail
             print('=== first job detail ====')
