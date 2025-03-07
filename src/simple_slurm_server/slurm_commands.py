@@ -14,49 +14,36 @@ def run_command(command):
         raise
     
 def get_jobs():
-        command = "module load slurm && squeue"
-        output = run_command(command)
- 
-        # Extract headers
-        lines = output.split("\n")
-        headers = lines[0].lower().split()
-
-        # Extract job details
-        job_list = []
-
-        import re
-        
-        for line in lines[1:]:
-            # Use regex to capture jobid (including array job notation like 1583267_[313-324])
-            match = re.match(r"(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+\((.+)\)", line.strip())
-            if match:
-                job_data = dict(zip(headers, match.groups()))
-                job_list.append(job_data)
-        
-        return job_list
+    command = "squeue"
+    result = run_command(command)
+    return parse_squeue_results(result)   
     
+def parse_squeue_results(result):
+    # Split the output into lines
+    lines = result.strip().split('\n')
+    
+    # Extract headers from the first line and strip whitespace
+    headers = lines[0].lower().split()[:6]
+    
+    # Initialize list to store dictionaries
+    jobs = []
+    
+    # Process each data row (skip the header line)
+    for line in lines[1:]:
+        # Split the line into columns (assuming space-separated)
+        columns = line.split()[:6]
+        
+        # Create a dictionary for this job
+        job_dict = dict(zip(headers, columns))
+        jobs.append(job_dict)
+    
+    return jobs
 
 def get_jobs_of_user(user_id):
-        command = "module load slurm && squeue -u "+user_id
-        output = run_command(command)
- 
-        # Extract headers
-        lines = output.split("\n")
-        headers = lines[0].lower().split()
-
-        # Extract job details
-        job_list = []
-
-        import re
-        
-        for line in lines[1:]:
-            # Use regex to capture jobid (including array job notation like 1583267_[313-324])
-            match = re.match(r"(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+\((.+)\)", line.strip())
-            if match:
-                job_data = dict(zip(headers, match.groups()))
-                job_list.append(job_data)
-        
-        return job_list
+    command = "squeue -u "+user_id
+    result = run_command(command)
+    return parse_squeue_results(result)        
+    
 
 def get_job(job_id):
         command = "scontrol show job " + job_id
