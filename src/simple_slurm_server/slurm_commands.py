@@ -42,7 +42,23 @@ def parse_squeue_results(result):
 def get_jobs_of_user(user_id):
     command = "squeue -u "+user_id
     result = run_command(command)
-    return parse_squeue_results(result)        
+    return parse_squeue_results(result)   
+
+def get_job_from_job_name(job_name, user_id=None):
+
+    if user_id is None:
+        jobs = get_jobs()
+    else:
+        jobs = get_jobs_of_user(user_id)
+    
+    jobs_found = [job for job in jobs if job['name'] == job_name]
+
+    if len(jobs_found) == 0:
+        return None
+    elif len(jobs_found) == 1:
+        return jobs_found[0]
+    else:
+        raise Exception(f"More than 1 job found with job_name={job_name}. jobs_found={jobs_found}")
     
 
 def get_job(job_id):
