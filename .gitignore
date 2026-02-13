@@ -1,0 +1,84 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+.env/
+env/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# Install logs
+pip-log.txt
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# PyCharm project settings
+.idea/
+
+# VS Code settings
+.vscode/
+
+# macOS system files
+.DS_Store
+
+# Logs and debugging
+*.log
+*.out
+*.err
+debug.log
+
+# Unit test and coverage reports
+.coverage
+htmlcov/
+*.cover
+*.py,cover
+nosetests.xml
+coverage.xml
+*.lprof
+*.gcda
+*.gcno
+.cache/
+pytest_cache/
+
+# MyPy
+.mypy_cache/
+
+# Cython
+*.c
+*.so
+
+# Docker
+docker-compose.override.yml
+
+# SQLite database files
+*.sqlite3
+*.db
+
+# Secrets and credentials
+*.pem
+*.key
+*.crt
+*.env
+
+# Temporary files
+tmp/
+temp/
+*.bak
+
+# Jupyter Notebook metadata
+.ipynb_checkpoints/
+
+# Anaconda
+.conda/
+
+# Exclude all files and folders starting with '_'
+_*/
+_*

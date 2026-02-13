@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SLURM Jobs – Simple Slurm Server</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 0; background: #0f0f12; color: #e4e4e7; height: 100vh; display: flex; flex-direction: column; }
+    .bar { display: flex; align-items: center; gap: 1rem; padding: 1rem 1.5rem; border-bottom: 1px solid #27272a; flex-shrink: 0; }
+    .bar h1 { font-size: 1.25rem; font-weight: 600; margin: 0; }
+    a { color: #818cf8; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .bar button { padding: 0.4rem 0.8rem; border: 1px solid #3f3f46; border-radius: 6px; background: #27272a; color: #e4e4e7; cursor: pointer; }
+    .bar button:hover { background: #3f3f46; }
+    .bar button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #error { margin: 0 1.5rem 1rem; padding: 1rem; background: #451a1a; color: #fecaca; border-radius: 6px; display: none; flex-shrink: 0; }
+    .panels { display: flex; flex: 1; min-height: 0; }
+    .panel-left { flex: 0 0 50%; display: flex; flex-direction: column; border-right: 1px solid #27272a; min-width: 0; }
+    .panel-right { flex: 0 0 50%; display: flex; flex-direction: column; min-width: 0; background: #18181b; }
+    .panel-title { padding: 0.75rem 1rem; font-size: 0.8125rem; font-weight: 500; color: #a1a1aa; border-bottom: 1px solid #27272a; flex-shrink: 0; }
+    .panel-body { flex: 1; overflow: auto; padding: 1rem; }
+    #loading { padding: 2rem; text-align: center; color: #71717a; }
+    .table-wrap { overflow: auto; flex: 1; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #27272a; }
+    th { color: #a1a1aa; font-weight: 500; position: sticky; top: 0; background: #0f0f12; white-space: nowrap; cursor: pointer; user-select: none; }
+    th:hover { color: #e4e4e7; }
+    th .arrow { margin-left: 0.25rem; font-size: 0.7em; opacity: 0.8; }
+    tr.filter-row td { padding: 0.25rem 0.5rem; vertical-align: middle; background: #18181b; border-bottom: 1px solid #27272a; position: sticky; top: 2rem; }
+    tr.filter-row select, tr.filter-row input { width: 100%; max-width: 100%; padding: 0.25rem 0.4rem; font-size: 0.8125rem; border: 1px solid #3f3f46; border-radius: 4px; background: #27272a; color: #e4e4e7; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: #18181b; }
+    tbody tr.selected { background: #27272a; }
+    .status { padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
+    .status.R { background: #166534; color: #bbf7d0; }
+    .status.PD { background: #854d0e; color: #fef08a; }
+    #detail-placeholder { color: #71717a; font-size: 0.875rem; }
+    #detail-content { display: none; }
+    #detail-content h2 { margin: 0 0 0.5rem; font-size: 1rem; }
+    #detail-content pre { margin: 0; white-space: pre-wrap; word-break: break-all; color: #a1a1aa; font-size: 0.8125rem; }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <h1>SLURM Jobs</h1>
+    <button type="button" id="refresh">Refresh</button>
+    <span id="count"></span>
+    <a href="/docs" target="_blank">API docs</a>
+  </div>
+  <div id="error" class="error"></div>
+  <div class="panels">
+    <div class="panel-left">
+      <div class="panel-title">Jobs</div>
+      <div class="panel-body">
+        <div id="loading" class="loading">Loading jobs…</div>
+        <div class="table-wrap" id="table-wrap" style="display: none;">
+          <table id="table">
+            <thead>
+              <tr>
+                <th data-col="0">Job ID <span class="arrow" id="arrow-0"></span></th>
+                <th data-col="1">Name <span class="arrow" id="arrow-1"></span></th>
+                <th data-col="2">User <span class="arrow" id="arrow-2"></span></th>
+                <th data-col="3">Status <span class="arrow" id="arrow-3"></span></th>
+                <th data-col="4">Time <span class="arrow" id="arrow-4"></span></th>
+                <th data-col="5">Node(s) <span class="arrow" id="arrow-5"></span></th>
+              </tr>
+              <tr class="filter-row">
+                <td><input type="text" id="filter-jobid" placeholder="All" title="Filter by Job ID"></td>
+                <td><input type="text" id="filter-name" placeholder="All" title="Filter by name"></td>
+                <td><select id="filter-user" title="Filter by user"><option value="">All</option></select></td>
+                <td><select id="filter-status" title="Filter by status"><option value="">All</option></td>
+                <td></td>
+                <td><input type="text" id="filter-node" placeholder="All" title="Filter by node"></td>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="panel-right">
+      <div class="panel-title">Job details</div>
+      <div class="panel-body">
+        <div id="detail-placeholder">Click a job to view details.</div>
+        <div id="detail-content">
+          <h2>Job <span id="detail-id"></span></h2>
+          <pre id="detail-body"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var API = '/api/v1';
+    var allJobs = [];
+    var sortCol = 0;
+    var sortDir = 1; // 1 = asc, -1 = desc
+
+    function getCellVal(job, col) {
+      var j = job.jobid !== undefined ? job : { jobid: job.JOBID, name: job.NAME, user: job.USER, st: job.ST, time: job.TIME, nodelist: job.NODELIST || job['nodelist(reason)'] };
+      var v = ['jobid', 'name', 'user', 'st', 'time', 'nodelist'][col];
+      var val = j[v] || '';
+      return String(val).toLowerCase();
+    }
+
+    function applyFiltersAndSort() {
+      var jobid = (document.getElementById('filter-jobid').value || '').toLowerCase();
+      var name = (document.getElementById('filter-name').value || '').toLowerCase();
+      var user = (document.getElementById('filter-user').value || '').toLowerCase();
+      var status = (document.getElementById('filter-status').value || '').toLowerCase();
+      var node = (document.getElementById('filter-node').value || '').toLowerCase();
+      var list = allJobs.filter(function (job) {
+        if (jobid && getCellVal(job, 0).indexOf(jobid) === -1) return false;
+        if (name && getCellVal(job, 1).indexOf(name) === -1) return false;
+        if (user && getCellVal(job, 2) !== user) return false;
+        if (status && getCellVal(job, 3) !== status) return false;
+        if (node && getCellVal(job, 5).indexOf(node) === -1) return false;
+        return true;
+      });
+      list.sort(function (a, b) {
+        var va = getCellVal(a, sortCol);
+        var vb = getCellVal(b, sortCol);
+        var cmp = va < vb ? -1 : va > vb ? 1 : 0;
+        return sortDir * cmp;
+      });
+      return list;
+    }
+
+    function updateSortArrows() {
+      for (var c = 0; c <= 5; c++) {
+        var span = document.getElementById('arrow-' + c);
+        span.textContent = c === sortCol ? (sortDir === 1 ? '\u25B2' : '\u25BC') : '';
+      }
+    }
+
+    function showError(msg) {
+      var el = document.getElementById('error');
+      el.textContent = msg;
+      el.style.display = 'block';
+    }
+    function hideError() {
+      document.getElementById('error').style.display = 'none';
+    }
+    function setLoading(on) {
+      document.getElementById('loading').style.display = on ? 'block' : 'none';
+      document.getElementById('table-wrap').style.display = on ? 'none' : 'block';
+      document.getElementById('refresh').disabled = on;
+    }
+
+    function setSelectedRow(row) {
+      var tbody = document.getElementById('tbody');
+      for (var i = 0; i < tbody.rows.length; i++) tbody.rows[i].classList.remove('selected');
+      if (row) row.classList.add('selected');
+    }
+
+    function renderTableBody(list) {
+      var tbody = document.getElementById('tbody');
+      tbody.innerHTML = '';
+      document.getElementById('count').textContent = list.length + ' job(s)';
+      list.forEach(function (job) {
+        var tr = document.createElement('tr');
+        var j = job.jobid !== undefined ? job : { jobid: job.JOBID, name: job.NAME, user: job.USER, st: job.ST, time: job.TIME, nodelist: job.NODELIST || job['nodelist(reason)'] };
+        tr.dataset.jobId = j.jobid;
+        var st = (j.st || '').toUpperCase();
+        tr.innerHTML =
+          '<td>' + (j.jobid || '') + '</td>' +
+          '<td>' + (j.name || '') + '</td>' +
+          '<td>' + (j.user || '') + '</td>' +
+          '<td><span class="status ' + st + '">' + st + '</span></td>' +
+          '<td>' + (j.time || '') + '</td>' +
+          '<td>' + (j.nodelist || '') + '</td>';
+        tr.addEventListener('click', function () { showDetail(tr.dataset.jobId, tr); });
+        tbody.appendChild(tr);
+      });
+      updateSortArrows();
+    }
+
+    function refreshTable() {
+      var list = applyFiltersAndSort();
+      renderTableBody(list);
+    }
+
+    function populateFilterDropdowns() {
+      var users = {};
+      var statuses = {};
+      allJobs.forEach(function (job) {
+        var u = (job.user || job.USER || '').trim();
+        var s = (job.st || job.ST || '').toUpperCase().trim();
+        if (u) users[u] = true;
+        if (s) statuses[s] = true;
+      });
+      var userSel = document.getElementById('filter-user');
+      var statusSel = document.getElementById('filter-status');
+      userSel.innerHTML = '<option value="">All</option>';
+      statusSel.innerHTML = '<option value="">All</option>';
+      Object.keys(users).sort().forEach(function (u) { userSel.appendChild(new Option(u, u)); });
+      Object.keys(statuses).sort().forEach(function (s) { statusSel.appendChild(new Option(s, s)); });
+    }
+
+    function onDataLoaded(data) {
+      allJobs = Array.isArray(data) ? data : [];
+      populateFilterDropdowns();
+      document.getElementById('detail-placeholder').style.display = 'block';
+      document.getElementById('detail-content').style.display = 'none';
+      setSelectedRow(null);
+      refreshTable();
+    }
+
+    function loadJobs() {
+      hideError();
+      setLoading(true);
+      fetch(API + '/jobs')
+        .then(function (r) { if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.json(); })
+        .then(function (data) {
+          onDataLoaded(data);
+          setLoading(false);
+        })
+        .catch(function (e) {
+          showError('Failed to load jobs: ' + e.message);
+          setLoading(false);
+        });
+    }
+
+    function showDetail(jobId, row) {
+      setSelectedRow(row || null);
+      document.getElementById('detail-placeholder').style.display = 'none';
+      document.getElementById('detail-content').style.display = 'block';
+      document.getElementById('detail-id').textContent = jobId;
+      document.getElementById('detail-body').textContent = 'Loading…';
+      fetch(API + '/jobs/' + encodeURIComponent(jobId))
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (data) {
+          document.getElementById('detail-body').textContent = JSON.stringify(data, null, 2);
+        })
+        .catch(function () {
+          document.getElementById('detail-body').textContent = 'Could not load job details.';
+        });
+    }
+
+    document.getElementById('refresh').addEventListener('click', loadJobs);
+    ['filter-jobid', 'filter-name', 'filter-user', 'filter-status', 'filter-node'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('input', refreshTable);
+      if (el && el.tagName === 'SELECT') el.addEventListener('change', refreshTable);
+    });
+    document.querySelectorAll('#table thead tr:first-child th').forEach(function (th) {
+      th.addEventListener('click', function () {
+        var col = parseInt(th.getAttribute('data-col'), 10);
+        if (col === sortCol) sortDir = -sortDir; else { sortCol = col; sortDir = 1; }
+        refreshTable();
+      });
+    });
+    loadJobs();
+  </script>
+</body>
+</html>

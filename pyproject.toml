@@ -1,0 +1,26 @@
+[project]
+name = "simple_slurm_server"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Jinkoo Kim"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi (>=0.115.11,<0.116.0)",
+    "requests (>=2.32.3,<3.0.0)",
+    "uvicorn (>=0.34.0,<0.35.0)",
+    "python-dotenv (>=1.0.0,<2.0.0)"
+]
+
+[project.scripts]
+main = "simple_slurm_server.main:main"
+
+[tool.poetry]
+packages = [{ include = "simple_slurm_server", from = "src" }]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
