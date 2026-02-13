@@ -88,3 +88,6 @@ All endpoints return JSON. OpenAPI docs at `/docs`, ReDoc at `/redoc`.
 
 - **simple-slurm-server** = single project root (no `server/` subfolder). FastAPI app in `src/simple_slurm_server/`; API under `/api/v1`, built-in dashboard at `/dashboard/`, default port 7788.
 - **Library use**: Other projects import `simple_slurm_server.slurm_commands` and call `get_jobs()`, `get_jobs_of_user()`, etc.
+
+# Change history
+- added a simple dashboard to this server root, and removed dashboard-react project
