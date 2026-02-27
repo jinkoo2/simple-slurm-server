@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" href="/dashboard/favicon.png">
   <title>SLURM Jobs – Simple Slurm Server</title>
   <style>
     * { box-sizing: border-box; }
@@ -32,6 +33,9 @@
     tbody tr { cursor: pointer; }
     tbody tr:hover { background: #18181b; }
     tbody tr.selected { background: #27272a; }
+    .cmd-btn { padding: 0.25rem 0.6rem; border-radius: 4px; border: 1px solid #3f3f46; background: #27272a; color: #e4e4e7; font-size: 0.75rem; cursor: pointer; }
+    .cmd-btn:hover { background: #3f3f46; }
+    .cmd-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .status { padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
     .status.R { background: #166534; color: #bbf7d0; }
     .status.PD { background: #854d0e; color: #fef08a; }
@@ -64,6 +68,7 @@
                 <th data-col="3">Status <span class="arrow" id="arrow-3"></span></th>
                 <th data-col="4">Time <span class="arrow" id="arrow-4"></span></th>
                 <th data-col="5">Node(s) <span class="arrow" id="arrow-5"></span></th>
+                <th>Commands</th>
               </tr>
               <tr class="filter-row">
                 <td><input type="text" id="filter-jobid" placeholder="All" title="Filter by Job ID"></td>
@@ -72,6 +77,7 @@
                 <td><select id="filter-status" title="Filter by status"><option value="">All</option></td>
                 <td></td>
                 <td><input type="text" id="filter-node" placeholder="All" title="Filter by node"></td>
+                <td></td>
               </tr>
             </thead>
             <tbody id="tbody"></tbody>
@@ -85,6 +91,11 @@
         <div id="detail-placeholder">Click a job to view details.</div>
         <div id="detail-content">
           <h2>Job <span id="detail-id"></span></h2>
+          <div style="margin: 0.5rem 0 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="button" class="cmd-btn" id="btn-command">Command</button>
+            <button type="button" class="cmd-btn" id="btn-stdout">StdOut</button>
+            <button type="button" class="cmd-btn" id="btn-stderr">StdErr</button>
+          </div>
           <pre id="detail-body"></pre>
         </div>
       </div>
@@ -96,6 +107,34 @@
     var allJobs = [];
     var sortCol = 0;
     var sortDir = 1; // 1 = asc, -1 = desc
+    var FILTER_STORAGE_KEY = 'simple_slurm_dashboard_filters_v1';
+    var currentJobId = null;
+
+    function loadFilterStateFromStorage() {
+      try {
+        var raw = localStorage.getItem(FILTER_STORAGE_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function saveFilterState() {
+      try {
+        var state = {
+          jobid: document.getElementById('filter-jobid').value || '',
+          name: document.getElementById('filter-name').value || '',
+          user: document.getElementById('filter-user').value || '',
+          status: document.getElementById('filter-status').value || '',
+          node: document.getElementById('filter-node').value || ''
+        };
+        localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(state));
+      } catch (e) {
+        // ignore storage errors
+      }
+    }
+
+    var savedFilters = loadFilterStateFromStorage();
 
     function getCellVal(job, col) {
       var j = job.jobid !== undefined ? job : { jobid: job.JOBID, name: job.NAME, user: job.USER, st: job.ST, time: job.TIME, nodelist: job.NODELIST || job['nodelist(reason)'] };
@@ -170,6 +209,20 @@
           '<td><span class="status ' + st + '">' + st + '</span></td>' +
           '<td>' + (j.time || '') + '</td>' +
           '<td>' + (j.nodelist || '') + '</td>';
+
+        // Commands cell with Cancel button
+        var cmdTd = document.createElement('td');
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'cmd-btn';
+        btn.textContent = 'Cancel';
+        btn.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          onCancelJob(j.jobid);
+        });
+        cmdTd.appendChild(btn);
+        tr.appendChild(cmdTd);
+
         tr.addEventListener('click', function () { showDetail(tr.dataset.jobId, tr); });
         tbody.appendChild(tr);
       });
@@ -201,6 +254,22 @@
     function onDataLoaded(data) {
       allJobs = Array.isArray(data) ? data : [];
       populateFilterDropdowns();
+
+      // Reapply saved filter selections (including user/status) if available
+      if (savedFilters) {
+        document.getElementById('filter-jobid').value = savedFilters.jobid || '';
+        document.getElementById('filter-name').value = savedFilters.name || '';
+        document.getElementById('filter-node').value = savedFilters.node || '';
+        var userSel = document.getElementById('filter-user');
+        var statusSel = document.getElementById('filter-status');
+        if (userSel && savedFilters.user && Array.prototype.some.call(userSel.options, function (o) { return o.value === savedFilters.user; })) {
+          userSel.value = savedFilters.user;
+        }
+        if (statusSel && savedFilters.status && Array.prototype.some.call(statusSel.options, function (o) { return o.value === savedFilters.status; })) {
+          statusSel.value = savedFilters.status;
+        }
+      }
+
       document.getElementById('detail-placeholder').style.display = 'block';
       document.getElementById('detail-content').style.display = 'none';
       setSelectedRow(null);
@@ -226,6 +295,7 @@
       setSelectedRow(row || null);
       document.getElementById('detail-placeholder').style.display = 'none';
       document.getElementById('detail-content').style.display = 'block';
+      currentJobId = jobId;
       document.getElementById('detail-id').textContent = jobId;
       document.getElementById('detail-body').textContent = 'Loading…';
       fetch(API + '/jobs/' + encodeURIComponent(jobId))
@@ -238,11 +308,65 @@
         });
     }
 
-    document.getElementById('refresh').addEventListener('click', loadJobs);
+    function loadJobFile(kind) {
+      if (!currentJobId) {
+        showError('No job selected.');
+        return;
+      }
+      hideError();
+      document.getElementById('detail-placeholder').style.display = 'none';
+      document.getElementById('detail-content').style.display = 'block';
+      var label = kind === 'command' ? 'Command' : (kind === 'stdout' ? 'StdOut' : 'StdErr');
+      document.getElementById('detail-body').textContent = 'Loading ' + label + '…';
+      fetch(API + '/jobs/' + encodeURIComponent(currentJobId) + '/' + kind)
+        .then(function (r) {
+          if (!r.ok) {
+            return r.text().then(function (txt) {
+              throw new Error(txt || (r.status + ' ' + r.statusText));
+            });
+          }
+          return r.text();
+        })
+        .then(function (text) {
+          document.getElementById('detail-body').textContent = text;
+        })
+        .catch(function (e) {
+          showError('Failed to load ' + label + ' for job ' + currentJobId + ': ' + e.message);
+        });
+    }
+
+    function onCancelJob(jobId) {
+      if (!jobId) return;
+      var ok = window.confirm('Cancel job ' + jobId + '?');
+      if (!ok) return;
+      hideError();
+      fetch(API + '/jobs/' + encodeURIComponent(jobId), {
+        method: 'DELETE'
+      })
+        .then(function (r) {
+          if (!r.ok) {
+            return r.json().catch(function () { return {}; }).then(function (body) {
+              var msg = body && body.detail ? body.detail : (r.status + ' ' + r.statusText);
+              throw new Error(msg);
+            });
+          }
+          return r.json();
+        })
+        .then(function () {
+          loadJobs();
+        })
+        .catch(function (e) {
+          showError('Failed to cancel job ' + jobId + ': ' + e.message);
+        });
+    }
+
+    document.getElementById('refresh').addEventListener('click', function () {
+      loadJobs();
+    });
     ['filter-jobid', 'filter-name', 'filter-user', 'filter-status', 'filter-node'].forEach(function (id) {
       var el = document.getElementById(id);
-      if (el) el.addEventListener('input', refreshTable);
-      if (el && el.tagName === 'SELECT') el.addEventListener('change', refreshTable);
+      if (el) el.addEventListener('input', function () { refreshTable(); saveFilterState(); });
+      if (el && el.tagName === 'SELECT') el.addEventListener('change', function () { refreshTable(); saveFilterState(); });
     });
     document.querySelectorAll('#table thead tr:first-child th').forEach(function (th) {
       th.addEventListener('click', function () {
@@ -251,6 +375,9 @@
         refreshTable();
       });
     });
+    document.getElementById('btn-command').addEventListener('click', function () { loadJobFile('command'); });
+    document.getElementById('btn-stdout').addEventListener('click', function () { loadJobFile('stdout'); });
+    document.getElementById('btn-stderr').addEventListener('click', function () { loadJobFile('stderr'); });
     loadJobs();
   </script>
 </body>

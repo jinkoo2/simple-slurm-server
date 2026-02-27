@@ -1,6 +1,8 @@
 from typing import Any, Dict, List, Optional
+import os
 
 from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from ... import slurm_commands as sl
@@ -67,6 +69,75 @@ async def get_job(
         return sl.get_job(job_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _read_job_file_by_field(job_id: str, field: str) -> str:
+    """
+    Helper to read a job-related file (e.g. Command, StdOut, StdErr) from the
+    details returned by `scontrol show job`.
+    """
+    try:
+        job = sl.get_job(job_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    path = job.get(field)
+    if not path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"{field} path not available for job {job_id}",
+        )
+
+    if not os.path.isfile(path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"File not found for {field}: {path}",
+        )
+
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to read {field} file: {e}",
+        )
+
+
+@router.get(
+    "/jobs/{job_id}/command",
+    response_class=PlainTextResponse,
+    summary="Get job Command file contents",
+    description="Return the contents of the job's Command file (typically the Slurm script).",
+)
+async def get_job_command(
+    job_id: str = Path(..., description="SLURM job ID."),
+):
+    return _read_job_file_by_field(job_id, "Command")
+
+
+@router.get(
+    "/jobs/{job_id}/stdout",
+    response_class=PlainTextResponse,
+    summary="Get job StdOut file contents",
+    description="Return the contents of the job's StdOut file.",
+)
+async def get_job_stdout(
+    job_id: str = Path(..., description="SLURM job ID."),
+):
+    return _read_job_file_by_field(job_id, "StdOut")
+
+
+@router.get(
+    "/jobs/{job_id}/stderr",
+    response_class=PlainTextResponse,
+    summary="Get job StdErr file contents",
+    description="Return the contents of the job's StdErr file.",
+)
+async def get_job_stderr(
+    job_id: str = Path(..., description="SLURM job ID."),
+):
+    return _read_job_file_by_field(job_id, "StdErr")
 
 
 @router.delete(
