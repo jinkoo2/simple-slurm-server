@@ -9,6 +9,9 @@ from ... import slurm_commands as sl
 
 router = APIRouter()
 
+_SLURM_USER_ID_LIST_ENV = os.getenv("SLURM_USER_ID_LIST", "")
+SLURM_USER_ID_LIST: List[str] = [u.strip() for u in _SLURM_USER_ID_LIST_ENV.split(",") if u.strip()]
+
 JOB_STATE_SUSPENDED = "SUSPENDED"
 JOB_STATE_RUNNING = "RUNNING"
 
@@ -35,7 +38,11 @@ class MessageResponse(BaseModel):
     "/jobs",
     response_model=List[Dict[str, Any]],
     summary="List jobs",
-    description="Return all SLURM jobs in the queue. Optionally filter by user with the `user` query parameter.",
+    description=(
+        "Return SLURM jobs from accounting (sacct). "
+        "By default this is scoped to the current Unix user; "
+        "you can override with the `user` query parameter."
+    ),
     responses={
         200: {"description": "List of job summaries (e.g. jobid, name, user, st, time)."},
         500: {"description": "SLURM or server error."},
@@ -44,12 +51,29 @@ class MessageResponse(BaseModel):
 async def list_jobs(
     user: Optional[str] = Query(None, alias="user", description="Filter jobs by this user ID."),
 ):
+    """
+    List jobs using `sacct`. If no `user` is provided, default to the current
+    Unix user so we don't show jobs from everyone on the cluster.
+    """
     try:
-        if user:
-            return sl.get_jobs_of_user(user)
-        return sl.get_jobs()
+        effective_user = user or os.environ.get("USER") or os.environ.get("LOGNAME")
+        return sl.get_jobs_of_user(effective_user) if effective_user else sl.get_jobs()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/jobs/users",
+    response_model=List[str],
+    summary="List configured Slurm user IDs",
+    description="Return the list of Slurm user IDs configured via the SLURM_USER_ID_LIST env var.",
+)
+async def list_slurm_users() -> List[str]:
+    """
+    Return the configured list of user IDs (from SLURM_USER_ID_LIST) for the dashboard
+    to populate the user selection dropdown.
+    """
+    return SLURM_USER_ID_LIST
 
 
 @router.get(

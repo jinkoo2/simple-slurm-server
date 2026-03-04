@@ -6,9 +6,10 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from simple_slurm_server.api.v1.jobs import router as jobs_router
-
+# Load environment (including SLURM_USER_ID_LIST) before importing routers
 load_dotenv()
+
+from simple_slurm_server.api.v1.jobs import router as jobs_router
 
 app = FastAPI(
     title="Simple Slurm Server",

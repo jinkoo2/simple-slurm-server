@@ -1,48 +1,90 @@
 import subprocess
 import json
+from typing import List, Dict, Optional
 
-def run_command(command):
+
+def run_command(command: str) -> str:
     """Run a shell command with 'module load slurm'."""
     try:
         full_command = f"module load slurm && {command}"
-        #print(f'full_command={full_command}')
         result = subprocess.run(
-            ["bash", "-c", full_command], stdout=subprocess.PIPE, text=True, check=True
+            ["bash", "-c", full_command],
+            stdout=subprocess.PIPE,
+            text=True,
+            check=True,
         )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
         raise
-    
-def get_jobs():
-    command = "squeue"
-    result = run_command(command)
-    return parse_squeue_results(result)   
-    
-def parse_squeue_results(result):
-    # Split the output into lines
-    lines = result.strip().split('\n')
-    
-    # Extract headers from the first line and strip whitespace
-    headers = lines[0].lower().split()[:6]
-    
-    # Initialize list to store dictionaries
-    jobs = []
-    
-    # Process each data row (skip the header line)
-    for line in lines[1:]:
-        # Split the line into columns (assuming space-separated)
-        columns = line.split()[:6]
-        
-        # Create a dictionary for this job
-        job_dict = dict(zip(headers, columns))
+
+
+# sacct fields:
+#   JobID | JobName | Partition | State | Start | End | Elapsed | MaxRSS | ReqMem
+SACCT_FORMAT = "JobID,JobName%60,Partition,State,Start,End,Elapsed,MaxRSS,ReqMem"
+SACCT_FIELDS = ["jobid", "name", "partition", "state", "start", "end", "time", "maxrss", "reqmem"]
+
+
+def parse_sacct_results(result: str, user: Optional[str] = None) -> List[Dict[str, str]]:
+    """
+    Parse sacct output (without header, parsable/pipe-delimited) into a list of dicts.
+    """
+    if not result:
+        return []
+
+    jobs: List[Dict[str, str]] = []
+    for line in result.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split("|")
+        if len(parts) != len(SACCT_FIELDS):
+            continue
+        job = dict(zip(SACCT_FIELDS, parts))
+        # Normalize to the shape expected by the dashboard:
+        # - user: we know it from the sacct -u argument
+        # - st: short/primary state string
+        # - start / end: timestamps
+        # - time: elapsed
+        # - nodelist: reuse partition column (we don't have nodes here)
+        job_dict: Dict[str, str] = {
+            "jobid": job["jobid"],
+            "name": job["name"],
+            "user": user or "",
+            "partition": job["partition"],
+            "state": job["state"],
+            "st": job["state"],
+            "start": job["start"],
+            "end": job["end"],
+            "time": job["time"],
+            "maxrss": job["maxrss"],
+            "reqmem": job["reqmem"],
+            "nodelist": job["partition"],
+        }
         jobs.append(job_dict)
-    
+
     return jobs
 
-def get_jobs_of_user(user_id):
-    command = "squeue -u "+user_id
+
+def get_jobs(user: Optional[str] = None) -> List[Dict[str, str]]:
+    """
+    Get jobs from sacct. If user is provided, limit to that user; otherwise
+    query all users (not used by the dashboard in practice). Use -S 1970-01-01
+    so we see the full history (past, present, future-reserved).
+    """
+    base_cmd = "sacct -P -n -S 1970-01-01 --format={fmt}".format(fmt=SACCT_FORMAT)
+    if user:
+        base_cmd = f"sacct -u {user} -P -n -S 1970-01-01 --format={SACCT_FORMAT}"
+    result = run_command(base_cmd)
+    return parse_sacct_results(result, user=user)
+
+
+def get_jobs_of_user(user_id: str) -> List[Dict[str, str]]:
+    """
+    Get all (past + present) jobs for a specific user via sacct.
+    """
+    command = f"sacct -u {user_id} -P -n -S 1970-01-01 --format={SACCT_FORMAT}"
     result = run_command(command)
-    return parse_squeue_results(result)   
+    return parse_sacct_results(result, user=user_id)
 
 def get_job_from_job_name(job_name, user_id=None):
 
@@ -106,8 +148,7 @@ if __name__ == '__main__':
             print('=== first job detail ====')
             print(json.dumps(get_job(jobs[0]['jobid']), indent=4))
         
-    def test_jobs_of_uesr():
-        user_id = 'jinkokim'
+    def test_jobs_of_user(user_id: str):
         # job list
         print(f'=== jobs of user[{user_id}] ====')
 
@@ -125,5 +166,4 @@ if __name__ == '__main__':
 
 
     test_all_jobs()
-    test_jobs_of_uesr()
 
