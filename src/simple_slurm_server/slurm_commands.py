@@ -162,7 +162,28 @@ def get_node(node_name: str) -> Dict[str, str]:
     return node_details
 
 
+SINFO_FORMAT = "%P|%a|%l|%D|%t|%N|%C|%m|%G|%f"
+SINFO_FIELDS = ["partition", "avail", "timelimit", "nodes", "state", "nodelist", "cpus", "memory_mb", "gres", "features"]
+
 SINFO_PARTITION_FORMAT = "%C|%G|%m|%l"
+
+
+def get_sinfo() -> List[Dict[str, str]]:
+    """Get sinfo output: one row per partition/state/nodelist combination."""
+    cmd = f"sinfo --noheader -o '{SINFO_FORMAT}'"
+    output = run_command(cmd)
+    if not output:
+        return []
+    rows = []
+    for line in output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split("|", len(SINFO_FIELDS) - 1)
+        if len(parts) != len(SINFO_FIELDS):
+            continue
+        rows.append(dict(zip(SINFO_FIELDS, parts)))
+    return rows
 
 
 def get_partition(partition_name: str) -> Dict[str, str]:

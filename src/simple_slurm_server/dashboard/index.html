@@ -103,6 +103,7 @@
     <div class="tabs">
       <button class="tab-btn active" id="tab-jobs"  onclick="switchTab('jobs')">Jobs</button>
       <button class="tab-btn"        id="tab-nodes" onclick="switchTab('nodes')">Nodes</button>
+      <button class="tab-btn"        id="tab-sinfo" onclick="switchTab('sinfo')">Partitions</button>
     </div>
     <a href="/docs" target="_blank" style="margin-left:auto;">API docs</a>
   </div>
@@ -222,6 +223,62 @@
     </div>
   </div><!-- /nodes-view -->
 
+  <!-- ══════════════════════════════════════
+       SINFO VIEW
+  ══════════════════════════════════════ -->
+  <div id="sinfo-view" class="view" style="display:none;">
+    <div class="view-bar">
+      <button type="button" id="sinfo-refresh">Refresh</button>
+      <span id="sinfo-count"></span>
+    </div>
+    <div id="sinfo-error" class="err-banner"></div>
+    <div class="panels" id="sinfo-panels">
+      <div class="panel-left" id="sinfo-panel-left">
+        <div class="panel-title">Partitions (sinfo)</div>
+        <div class="panel-body" style="padding:0;">
+          <div id="sinfo-loading" class="loading-msg">Loading…</div>
+          <div class="table-wrap" id="sinfo-table-wrap" style="display:none;">
+            <table id="sinfo-table">
+              <thead>
+                <tr>
+                  <th data-scol="0">Partition <span class="arrow" id="sarrow-0"></span></th>
+                  <th data-scol="1">Avail <span class="arrow" id="sarrow-1"></span></th>
+                  <th data-scol="2">Time Limit <span class="arrow" id="sarrow-2"></span></th>
+                  <th data-scol="3">Nodes <span class="arrow" id="sarrow-3"></span></th>
+                  <th data-scol="4">State <span class="arrow" id="sarrow-4"></span></th>
+                  <th data-scol="5">CPUs (A/I/O/T) <span class="arrow" id="sarrow-5"></span></th>
+                  <th data-scol="6">Mem/Node (GB) <span class="arrow" id="sarrow-6"></span></th>
+                  <th data-scol="7">GRES <span class="arrow" id="sarrow-7"></span></th>
+                  <th data-scol="8">Node List <span class="arrow" id="sarrow-8"></span></th>
+                  <th data-scol="9">Features <span class="arrow" id="sarrow-9"></span></th>
+                </tr>
+                <tr class="filter-row">
+                  <td><input type="text" id="sfilter-partition" placeholder="All" title="Filter by partition"></td>
+                  <td><select id="sfilter-avail"  title="Filter by availability"><option value="">All</option></select></td>
+                  <td></td><td></td>
+                  <td><select id="sfilter-state"  title="Filter by state"><option value="">All</option></select></td>
+                  <td></td><td></td><td></td><td></td><td></td>
+                </tr>
+              </thead>
+              <tbody id="sinfo-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="divider" id="sinfo-divider"></div>
+      <div class="panel-right" id="sinfo-panel-right">
+        <div class="panel-title">Partition details</div>
+        <div class="panel-body">
+          <div id="sinfo-detail-placeholder" class="detail-placeholder">Click a row to view partition details.</div>
+          <div id="sinfo-detail-content" class="detail-content" style="display:none;">
+            <h2>Partition <span id="sinfo-detail-name"></span></h2>
+            <table class="node-kv" id="sinfo-detail-kv"></table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /sinfo-view -->
+
   <script>
     var API = '/api/v1';
 
@@ -231,17 +288,13 @@
     var nodesLoaded = false;
 
     function switchTab(tab) {
-      var isJobs = tab === 'jobs';
-      document.getElementById('jobs-view').style.display  = isJobs ? '' : 'none';
-      document.getElementById('nodes-view').style.display = isJobs ? 'none' : '';
-      document.getElementById('tab-jobs').classList.toggle('active', isJobs);
-      document.getElementById('tab-nodes').classList.toggle('active', !isJobs);
-      if (isJobs) {
-        applySplit();
-      } else {
-        if (!nodesLoaded) loadNodes();
-        applyNodesSplit();
-      }
+      ['jobs','nodes','sinfo'].forEach(function(v) {
+        document.getElementById(v+'-view').style.display = tab===v ? '' : 'none';
+        document.getElementById('tab-'+v).classList.toggle('active', tab===v);
+      });
+      if      (tab==='jobs')  { applySplit(); }
+      else if (tab==='nodes') { if (!nodesLoaded) loadNodes(); applyNodesSplit(); }
+      else if (tab==='sinfo') { if (!sinfoLoaded) loadSinfo(); applySinfoSplit(); }
     }
 
     // ══════════════════════════════════════
@@ -984,12 +1037,233 @@
     });
 
     // ══════════════════════════════════════
+    // ── SINFO ──
+    // ══════════════════════════════════════
+    var allSinfo    = [];
+    var sinfoLoaded = false;
+    var sinfoSortCol = 0;
+    var sinfoSortDir = 1;
+    var SINFO_SPLIT_KEY = 'simple_slurm_sinfo_split_v1';
+    var sinfoSplitRatio = 0.65;
+
+    (function loadSinfoSplitFromStorage() {
+      try { var r = parseFloat(localStorage.getItem(SINFO_SPLIT_KEY)); if (!isNaN(r) && r>0.1 && r<0.9) sinfoSplitRatio = r; } catch(e){}
+    })();
+
+    function applySinfoSplit() {
+      var container = document.getElementById('sinfo-panels');
+      var left      = document.getElementById('sinfo-panel-left');
+      var right     = document.getElementById('sinfo-panel-right');
+      var divider   = document.getElementById('sinfo-divider');
+      if (!container||!left||!right) return;
+      var total = container.clientWidth; if (!total) return;
+      var dw = divider ? divider.offsetWidth : 4, min = 200;
+      var lw = Math.max(min, Math.min(total-min-dw, sinfoSplitRatio*total));
+      left.style.width  = lw + 'px';
+      right.style.width = (total-lw-dw) + 'px';
+    }
+
+    (function enableSinfoDividerDrag() {
+      var container = document.getElementById('sinfo-panels');
+      var divider   = document.getElementById('sinfo-divider');
+      var left      = document.getElementById('sinfo-panel-left');
+      if (!container||!divider||!left) return;
+      var dragging=false, startX=0, startW=0;
+      divider.addEventListener('mousedown', function(e){ dragging=true; startX=e.clientX; startW=left.getBoundingClientRect().width; document.body.style.userSelect='none'; });
+      window.addEventListener('mousemove', function(e){
+        if(!dragging) return;
+        var total=container.clientWidth; if(!total) return;
+        var dw=divider.offsetWidth||4, min=200;
+        var nw=Math.max(min,Math.min(total-min-dw,startW+e.clientX-startX));
+        sinfoSplitRatio=nw/total; applySinfoSplit();
+      });
+      window.addEventListener('mouseup', function(){
+        if(!dragging) return; dragging=false; document.body.style.userSelect='';
+        try{ localStorage.setItem(SINFO_SPLIT_KEY,String(sinfoSplitRatio)); }catch(e){}
+      });
+    })();
+
+    function getSinfoCellVal(row, col) {
+      var keys = ['partition','avail','timelimit','nodes','state','cpus','memory_mb','gres','nodelist','features'];
+      return String(row[keys[col]] || '').toLowerCase();
+    }
+
+    function applysinfoFiltersAndSort() {
+      var part  = (document.getElementById('sfilter-partition').value || '').toLowerCase();
+      var avail = (document.getElementById('sfilter-avail').value     || '').toLowerCase();
+      var state = (document.getElementById('sfilter-state').value     || '').toLowerCase();
+      var list = allSinfo.filter(function(row) {
+        if (part  && getSinfoCellVal(row,0).indexOf(part)  === -1) return false;
+        if (avail && getSinfoCellVal(row,1) !== avail)             return false;
+        if (state && getSinfoCellVal(row,4) !== state)             return false;
+        return true;
+      });
+      list.sort(function(a,b) {
+        var va = getSinfoCellVal(a,sinfoSortCol), vb = getSinfoCellVal(b,sinfoSortCol);
+        // numeric sort for Nodes (col 3) and Memory (col 6)
+        if (sinfoSortCol===3 || sinfoSortCol===6) {
+          var na=parseFloat(va)||0, nb=parseFloat(vb)||0;
+          return sinfoSortDir*(na-nb);
+        }
+        return sinfoSortDir*(va<vb?-1:va>vb?1:0);
+      });
+      return list;
+    }
+
+    function updateSinfoSortArrows() {
+      for (var c=0;c<=9;c++) {
+        var span = document.getElementById('sarrow-'+c);
+        if (span) span.textContent = c===sinfoSortCol ? (sinfoSortDir===1?'▲':'▼') : '';
+      }
+    }
+
+    function showSinfoError(msg) { var el=document.getElementById('sinfo-error'); el.textContent=msg; el.style.display='block'; }
+    function hideSinfoError()    { document.getElementById('sinfo-error').style.display='none'; }
+
+    function setSinfoLoading(on) {
+      document.getElementById('sinfo-loading').style.display    = on ? 'block' : 'none';
+      document.getElementById('sinfo-table-wrap').style.display = on ? 'none'  : 'block';
+      document.getElementById('sinfo-refresh').disabled = on;
+    }
+
+    function setSelectedSinfoRow(row) {
+      var tbody = document.getElementById('sinfo-tbody');
+      for (var i=0;i<tbody.rows.length;i++) tbody.rows[i].classList.remove('selected');
+      if (row) row.classList.add('selected');
+    }
+
+    function populateSinfoFilterDropdowns() {
+      var avails = {}, states = {};
+      allSinfo.forEach(function(row) {
+        var a=(row.avail||'').toLowerCase().trim(); if(a) avails[a]=true;
+        var s=(row.state||'').toLowerCase().trim(); if(s) states[s]=true;
+      });
+      var availSel = document.getElementById('sfilter-avail');
+      var prevAvail = availSel.value;
+      availSel.innerHTML = '<option value="">All</option>';
+      Object.keys(avails).sort().forEach(function(a){ availSel.appendChild(new Option(a,a)); });
+      if (prevAvail && Array.prototype.some.call(availSel.options,function(o){return o.value===prevAvail;})) availSel.value=prevAvail;
+
+      var stateSel = document.getElementById('sfilter-state');
+      var prevState = stateSel.value;
+      stateSel.innerHTML = '<option value="">All</option>';
+      Object.keys(states).sort().forEach(function(s){ stateSel.appendChild(new Option(s,s)); });
+      if (prevState && Array.prototype.some.call(stateSel.options,function(o){return o.value===prevState;})) stateSel.value=prevState;
+    }
+
+    function renderSinfoTable() {
+      var list = applysinfoFiltersAndSort();
+      var tbody = document.getElementById('sinfo-tbody');
+      tbody.innerHTML = '';
+      document.getElementById('sinfo-count').textContent = list.length + ' row(s)';
+      list.forEach(function(row) {
+        var tr = document.createElement('tr');
+        var partName = (row.partition||'').replace(/\*/g,'').trim();
+        tr.dataset.partName = partName;
+        var sc = nodeStateClass(row.state);
+        var isUp = (row.avail||'').toLowerCase() === 'up';
+        var cleanGres = (row.gres||'').replace(/\(null\)/g,'—') || '—';
+        tr.innerHTML =
+          '<td style="font-family:monospace;">'                              + (row.partition||'')                       + '</td>' +
+          '<td style="color:'+(isUp?'#bbf7d0':'#fecaca')+';font-weight:500;">' + (row.avail||'')                        + '</td>' +
+          '<td>'                                                             + (row.timelimit||'')                       + '</td>' +
+          '<td style="text-align:right;">'                                   + (row.nodes||'')                           + '</td>' +
+          '<td><span class="nstate ' + sc + '">'                            + (row.state||'') + '</span>'               + '</td>' +
+          '<td style="font-family:monospace;">'                              + (row.cpus||'')                            + '</td>' +
+          '<td style="text-align:right;">'                                   + mbToGb(row.memory_mb)                     + '</td>' +
+          '<td>'                                                             + cleanGres                                 + '</td>' +
+          '<td style="font-family:monospace;font-size:0.8rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (row.nodelist||'') + '">' + (row.nodelist||'') + '</td>' +
+          '<td style="color:#71717a;font-size:0.8rem;">'                    + ((row.features||'').trim() || '—')        + '</td>';
+        tr.addEventListener('click', function(){ showSinfoPartitionDetail(partName, tr); });
+        tbody.appendChild(tr);
+      });
+      updateSinfoSortArrows();
+    }
+
+    function showSinfoPartitionDetail(partName, row) {
+      setSelectedSinfoRow(row||null);
+      document.getElementById('sinfo-detail-placeholder').style.display = 'none';
+      document.getElementById('sinfo-detail-content').style.display = 'block';
+      document.getElementById('sinfo-detail-name').textContent = partName;
+      var kv = document.getElementById('sinfo-detail-kv');
+      kv.innerHTML = '<tr><td colspan="2" style="color:#71717a;">Loading…</td></tr>';
+      fetch(API + '/partitions/' + encodeURIComponent(partName))
+        .then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function(data) {
+          kv.innerHTML = '';
+          PARTITION_DISPLAY_FIELDS.forEach(function(field) {
+            var fkey = field[0], fdesc = field[1];
+            var val = data[fkey];
+            if (val === undefined || val === null || val === '') return;
+            var tr2 = document.createElement('tr');
+            var ktd = document.createElement('td');
+            ktd.textContent = fkey; ktd.title = fdesc; ktd.className = 'has-tooltip';
+            var vtd = document.createElement('td');
+            if (fkey === 'State') {
+              var sp = document.createElement('span');
+              sp.className = 'nstate ' + (val==='UP' ? 'nstate-idle' : val==='DOWN' ? 'nstate-down' : 'nstate-drain');
+              sp.textContent = val;
+              vtd.appendChild(sp);
+            } else if (fkey === 'CPUsState') {
+              var code = document.createElement('code');
+              code.style.cssText = 'font-family:monospace;color:#bfdbfe;font-size:0.8125rem;';
+              code.textContent = val + '  (A/I/O/T)';
+              vtd.appendChild(code);
+            } else if (PART_MB_FIELDS[fkey]) {
+              vtd.textContent = mbToGb(val);
+            } else {
+              vtd.textContent = val;
+            }
+            tr2.appendChild(ktd); tr2.appendChild(vtd);
+            kv.appendChild(tr2);
+          });
+        })
+        .catch(function() {
+          kv.innerHTML = '<tr><td colspan="2" style="color:#fecaca;">Could not load partition details.</td></tr>';
+        });
+    }
+
+    function loadSinfo() {
+      hideSinfoError(); setSinfoLoading(true);
+      fetch(API + '/sinfo')
+        .then(function(r){ if (!r.ok) throw new Error(r.status+' '+r.statusText); return r.json(); })
+        .then(function(data) {
+          allSinfo = Array.isArray(data) ? data : [];
+          sinfoLoaded = true;
+          populateSinfoFilterDropdowns();
+          document.getElementById('sinfo-detail-placeholder').style.display = 'block';
+          document.getElementById('sinfo-detail-content').style.display = 'none';
+          setSelectedSinfoRow(null);
+          renderSinfoTable();
+          setSinfoLoading(false);
+          applySinfoSplit();
+        })
+        .catch(function(e){ showSinfoError('Failed to load sinfo: ' + e.message); setSinfoLoading(false); });
+    }
+
+    document.getElementById('sinfo-refresh').addEventListener('click', function(){ sinfoLoaded=false; loadSinfo(); });
+    ['sfilter-partition','sfilter-avail','sfilter-state'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('input',  function(){ renderSinfoTable(); });
+      el.addEventListener('change', function(){ renderSinfoTable(); });
+    });
+    document.querySelectorAll('#sinfo-table thead tr:first-child th').forEach(function(th){
+      th.addEventListener('click', function(){
+        var col = parseInt(th.getAttribute('data-scol'), 10);
+        if (col === sinfoSortCol) sinfoSortDir = -sinfoSortDir; else { sinfoSortCol=col; sinfoSortDir=1; }
+        renderSinfoTable();
+      });
+    });
+
+    // ══════════════════════════════════════
     // Init
     // ══════════════════════════════════════
     loadUsersAndThenJobs();
     window.addEventListener('resize', function(){
       applySplit();
       if (document.getElementById('nodes-view').style.display !== 'none') applyNodesSplit();
+      if (document.getElementById('sinfo-view').style.display !== 'none') applySinfoSplit();
     });
   </script>
 </body>

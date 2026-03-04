@@ -25,6 +25,23 @@ async def list_nodes():
 
 
 @router.get(
+    "/sinfo",
+    response_model=List[Dict[str, Any]],
+    summary="Get sinfo output",
+    description="Return sinfo output: one row per partition/state/nodelist combination.",
+    responses={
+        200: {"description": "List of sinfo rows."},
+        500: {"description": "SLURM or server error."},
+    },
+)
+async def get_sinfo_data():
+    try:
+        return sl.get_sinfo()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
     "/partitions/{partition_name}",
     response_model=Dict[str, Any],
     summary="Get partition details",
