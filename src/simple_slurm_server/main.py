@@ -10,16 +10,19 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv()
 
 from simple_slurm_server.api.v1.jobs import router as jobs_router
+from simple_slurm_server.api.v1.nodes import router as nodes_router
 
 app = FastAPI(
     title="Simple Slurm Server",
-    description="REST API for querying and controlling SLURM jobs (list, details, cancel, suspend, resume).",
+    description="REST API for querying and controlling SLURM jobs (list, details, cancel, suspend, resume) and cluster nodes.",
     version="0.1.0",
     openapi_tags=[
         {"name": "Jobs", "description": "SLURM job listing, details, and lifecycle actions."},
+        {"name": "Nodes", "description": "SLURM node listing and details."},
     ],
 )
 app.include_router(jobs_router, prefix="/api/v1", tags=["Jobs"])
+app.include_router(nodes_router, prefix="/api/v1", tags=["Nodes"])
 
 # Dashboard at root: redirect / to dashboard; static files under /dashboard
 _dashboard_dir = Path(__file__).resolve().parent / "dashboard"

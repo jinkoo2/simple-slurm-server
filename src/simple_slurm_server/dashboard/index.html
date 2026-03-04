@@ -4,26 +4,49 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/png" href="/dashboard/favicon.png">
-  <title>SLURM Jobs – Simple Slurm Server</title>
+  <title>Simple Slurm Server</title>
   <style>
     * { box-sizing: border-box; }
     body { font-family: system-ui, sans-serif; margin: 0; padding: 0; background: #0f0f12; color: #e4e4e7; height: 100vh; display: flex; flex-direction: column; }
-    .bar { display: flex; align-items: center; gap: 1rem; padding: 1rem 1.5rem; border-bottom: 1px solid #27272a; flex-shrink: 0; }
-    .bar h1 { font-size: 1.25rem; font-weight: 600; margin: 0; }
+
+    /* ── top bar ── */
+    .bar { display: flex; align-items: center; gap: 1rem; padding: 0.75rem 1.5rem; border-bottom: 1px solid #27272a; flex-shrink: 0; }
+    .bar h1 { font-size: 1.125rem; font-weight: 600; margin: 0; white-space: nowrap; }
     a { color: #818cf8; text-decoration: none; }
     a:hover { text-decoration: underline; }
-    .bar button { padding: 0.4rem 0.8rem; border: 1px solid #3f3f46; border-radius: 6px; background: #27272a; color: #e4e4e7; cursor: pointer; }
-    .bar button:hover { background: #3f3f46; }
-    .bar button:disabled { opacity: 0.5; cursor: not-allowed; }
-    #error { margin: 0 1.5rem 1rem; padding: 1rem; background: #451a1a; color: #fecaca; border-radius: 6px; display: none; flex-shrink: 0; }
+
+    /* ── tabs ── */
+    .tabs { display: flex; gap: 0.25rem; }
+    .tab-btn { padding: 0.35rem 0.9rem; border: 1px solid #3f3f46; border-radius: 6px; background: transparent; color: #a1a1aa; cursor: pointer; font-size: 0.875rem; transition: background 0.1s; }
+    .tab-btn:hover { background: #27272a; color: #e4e4e7; }
+    .tab-btn.active { background: #3f3f46; color: #e4e4e7; border-color: #52525b; }
+
+    /* ── per-view toolbar ── */
+    .view-bar { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 1.5rem; border-bottom: 1px solid #27272a; flex-shrink: 0; }
+    .view-bar button { padding: 0.35rem 0.75rem; border: 1px solid #3f3f46; border-radius: 6px; background: #27272a; color: #e4e4e7; cursor: pointer; font-size: 0.8125rem; }
+    .view-bar button:hover { background: #3f3f46; }
+    .view-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .view-bar label { font-size: 0.8rem; color: #a1a1aa; }
+    .view-bar select { padding: 0.25rem 0.4rem; border-radius: 4px; border: 1px solid #3f3f46; background: #18181b; color: #e4e4e7; font-size: 0.8rem; }
+    .view-bar span { font-size: 0.8rem; color: #71717a; }
+
+    /* ── views ── */
+    .view { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
+    /* ── error banner ── */
+    .err-banner { margin: 0 1.5rem 0.5rem; padding: 0.75rem 1rem; background: #451a1a; color: #fecaca; border-radius: 6px; display: none; flex-shrink: 0; font-size: 0.875rem; }
+
+    /* ── split panels ── */
     .panels { display: flex; flex: 1; min-height: 0; }
-    .panel-left { flex: 0 0 auto; display: flex; flex-direction: column; border-right: 1px solid #27272a; min-width: 0; }
+    .panel-left  { flex: 0 0 auto; display: flex; flex-direction: column; border-right: 1px solid #27272a; min-width: 0; }
     .panel-right { flex: 0 0 auto; display: flex; flex-direction: column; min-width: 0; background: #18181b; }
     .divider { flex: 0 0 4px; cursor: col-resize; background: #27272a; }
     .panel-title { padding: 0.75rem 1rem; font-size: 0.8125rem; font-weight: 500; color: #a1a1aa; border-bottom: 1px solid #27272a; flex-shrink: 0; }
-    .panel-body { flex: 1; overflow: auto; padding: 1rem; }
-    #loading { padding: 2rem; text-align: center; color: #71717a; }
-    .table-wrap { overflow: auto; flex: 1; }
+    .panel-body  { flex: 1; overflow: auto; padding: 1rem; }
+    .table-wrap  { overflow: auto; flex: 1; }
+
+    /* ── tables ── */
+    .loading-msg { padding: 2rem; text-align: center; color: #71717a; font-size: 0.875rem; }
     table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
     th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #27272a; }
     th { color: #a1a1aa; font-weight: 500; position: sticky; top: 0; background: #0f0f12; white-space: nowrap; cursor: pointer; user-select: none; }
@@ -34,276 +57,328 @@
     tbody tr { cursor: pointer; }
     tbody tr:hover { background: #18181b; }
     tbody tr.selected { background: #27272a; }
-    .cmd-btn { padding: 0.25rem 0.6rem; border-radius: 4px; border: 1px solid #3f3f46; background: #27272a; color: #e4e4e7; font-size: 0.75rem; cursor: pointer; }
+
+    /* ── job state badges ── */
+    .status { padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
+    .status.R  { background: #166534; color: #bbf7d0; }
+    .status.PD { background: #854d0e; color: #fef08a; }
+
+    /* ── node state badges ── */
+    .nstate { padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
+    .nstate-idle  { background: #166534; color: #bbf7d0; }
+    .nstate-mix   { background: #1e3a5f; color: #bfdbfe; }
+    .nstate-alloc { background: #854d0e; color: #fef08a; }
+    .nstate-down  { background: #7f1d1d; color: #fecaca; }
+    .nstate-drain, .nstate-drng, .nstate-drained { background: #7c2d12; color: #fed7aa; }
+    .nstate-comp  { background: #134e4a; color: #99f6e4; }
+    .nstate-resv, .nstate-maint { background: #4c1d95; color: #ddd6fe; }
+    .nstate-unk   { background: #27272a; color: #a1a1aa; }
+
+    /* ── job panel commands ── */
+    .cmd-btn  { padding: 0.25rem 0.6rem; border-radius: 4px; border: 1px solid #3f3f46; background: #27272a; color: #e4e4e7; font-size: 0.75rem; cursor: pointer; }
     .cmd-btn:hover { background: #3f3f46; }
     .cmd-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .cmd-cell { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
-    .status { padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
-    .status.R { background: #166534; color: #bbf7d0; }
-    .status.PD { background: #854d0e; color: #fef08a; }
-    #detail-placeholder { color: #71717a; font-size: 0.875rem; }
-    #detail-content { display: none; }
-    #detail-content h2 { margin: 0 0 0.5rem; font-size: 1rem; }
-    #detail-content pre { margin: 0; white-space: pre-wrap; word-break: break-all; color: #a1a1aa; font-size: 0.8125rem; }
+
+    /* ── detail panel ── */
+    .detail-placeholder { color: #71717a; font-size: 0.875rem; }
+    .detail-content h2   { margin: 0 0 0.75rem; font-size: 1rem; }
+    .detail-content pre  { margin: 0; white-space: pre-wrap; word-break: break-all; color: #a1a1aa; font-size: 0.8125rem; line-height: 1.6; }
+
+    /* ── node detail table ── */
+    .node-kv { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+    .node-kv td { padding: 0.3rem 0.5rem; border-bottom: 1px solid #27272a; vertical-align: top; }
+    .node-kv td:first-child { color: #a1a1aa; white-space: nowrap; width: 40%; }
+    .node-kv td:last-child  { color: #e4e4e7; word-break: break-all; }
+    .node-kv td.has-tooltip { text-decoration: underline; text-decoration-style: dotted; text-decoration-color: #52525b; cursor: help; }
+    .part-section { border-left: 2px solid #3f3f46; padding: 0.35rem 0.65rem; margin-bottom: 0.5rem; border-radius: 0 4px 4px 0; }
+    .part-section-name { font-weight: 600; color: #c4b5fd; font-size: 0.8125rem; margin-bottom: 0.35rem; }
   </style>
 </head>
 <body>
+
+  <!-- ══ App bar ══ -->
   <div class="bar">
-    <h1>SLURM Jobs</h1>
-    <div id="user-controls" style="display: flex; align-items: center; gap: 0.4rem;">
-      <label for="user-select" style="font-size: 0.8rem; color: #a1a1aa;">User</label>
-      <select
-        id="user-select"
-        style="padding: 0.25rem 0.4rem; border-radius: 4px; border: 1px solid #3f3f46; background: #18181b; color: #e4e4e7; font-size: 0.8rem;"
-      ></select>
+    <h1>Simple Slurm Server</h1>
+    <div class="tabs">
+      <button class="tab-btn active" id="tab-jobs"  onclick="switchTab('jobs')">Jobs</button>
+      <button class="tab-btn"        id="tab-nodes" onclick="switchTab('nodes')">Nodes</button>
     </div>
-    <button type="button" id="refresh">Refresh</button>
-    <span id="count"></span>
-    <a href="/docs" target="_blank">API docs</a>
+    <a href="/docs" target="_blank" style="margin-left:auto;">API docs</a>
   </div>
-  <div id="error" class="error"></div>
-  <div class="panels" id="panels">
-    <div class="panel-left" id="panel-left">
-      <div class="panel-title">Jobs</div>
-      <div class="panel-body">
-        <div id="loading" class="loading">Loading jobs…</div>
-        <div class="table-wrap" id="table-wrap" style="display: none;">
-          <table id="table">
-            <thead>
-              <tr>
-                <th data-col="0">Job ID <span class="arrow" id="arrow-0"></span></th>
-                <th data-col="1">Name <span class="arrow" id="arrow-1"></span></th>
-                <th data-col="2">State <span class="arrow" id="arrow-2"></span></th>
-                <th data-col="3">Start <span class="arrow" id="arrow-3"></span></th>
-                <th data-col="4">End <span class="arrow" id="arrow-4"></span></th>
-                <th data-col="5">Elapsed <span class="arrow" id="arrow-5"></span></th>
-                <th data-col="6">Partition <span class="arrow" id="arrow-6"></span></th>
-                <th>Commands</th>
-              </tr>
-              <tr class="filter-row">
-                <td><input type="text" id="filter-jobid" placeholder="All" title="Filter by Job ID"></td>
-                <td><input type="text" id="filter-name" placeholder="All" title="Filter by name"></td>
-                <td><select id="filter-status" title="Filter by status"><option value="">All</option></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td><input type="text" id="filter-node" placeholder="All" title="Filter by partition"></td>
-                <td><button type="button" class="cmd-btn" id="btn-cancel-all-user" style="display: none;">Cancel All Jobs of User</button></td>
-              </tr>
-            </thead>
-            <tbody id="tbody"></tbody>
-          </table>
+
+  <!-- ══════════════════════════════════════
+       JOBS VIEW
+  ══════════════════════════════════════ -->
+  <div id="jobs-view" class="view">
+    <div class="view-bar">
+      <div id="user-controls" style="display:flex;align-items:center;gap:0.4rem;">
+        <label for="user-select">User</label>
+        <select id="user-select"></select>
+      </div>
+      <button type="button" id="refresh">Refresh</button>
+      <span id="count"></span>
+    </div>
+    <div id="error" class="err-banner"></div>
+    <div class="panels" id="panels">
+      <div class="panel-left" id="panel-left">
+        <div class="panel-title">Jobs</div>
+        <div class="panel-body" style="padding:0;">
+          <div id="loading" class="loading-msg">Loading jobs…</div>
+          <div class="table-wrap" id="table-wrap" style="display:none;">
+            <table id="table">
+              <thead>
+                <tr>
+                  <th data-col="0">Job ID <span class="arrow" id="arrow-0"></span></th>
+                  <th data-col="1">Name <span class="arrow" id="arrow-1"></span></th>
+                  <th data-col="2">State <span class="arrow" id="arrow-2"></span></th>
+                  <th data-col="3">Start <span class="arrow" id="arrow-3"></span></th>
+                  <th data-col="4">End <span class="arrow" id="arrow-4"></span></th>
+                  <th data-col="5">Elapsed <span class="arrow" id="arrow-5"></span></th>
+                  <th data-col="6">Partition <span class="arrow" id="arrow-6"></span></th>
+                  <th>Commands</th>
+                </tr>
+                <tr class="filter-row">
+                  <td><input type="text" id="filter-jobid" placeholder="All" title="Filter by Job ID"></td>
+                  <td><input type="text" id="filter-name"  placeholder="All" title="Filter by name"></td>
+                  <td><select id="filter-status" title="Filter by status"><option value="">All</option></select></td>
+                  <td></td><td></td><td></td>
+                  <td><input type="text" id="filter-node" placeholder="All" title="Filter by partition"></td>
+                  <td><button type="button" class="cmd-btn" id="btn-cancel-all-user" style="display:none;">Cancel All Jobs of User</button></td>
+                </tr>
+              </thead>
+              <tbody id="tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="divider" id="divider"></div>
+      <div class="panel-right" id="panel-right">
+        <div class="panel-title">Job details</div>
+        <div class="panel-body">
+          <div id="detail-placeholder" class="detail-placeholder">Click a job to view details.</div>
+          <div id="detail-content" class="detail-content" style="display:none;">
+            <h2>Job <span id="detail-id"></span></h2>
+            <pre id="detail-body"></pre>
+          </div>
         </div>
       </div>
     </div>
-    <div class="divider" id="divider"></div>
-    <div class="panel-right" id="panel-right">
-      <div class="panel-title">Job details</div>
-      <div class="panel-body">
-        <div id="detail-placeholder">Click a job to view details.</div>
-        <div id="detail-content">
-          <h2>Job <span id="detail-id"></span></h2>
-          <pre id="detail-body"></pre>
+  </div><!-- /jobs-view -->
+
+  <!-- ══════════════════════════════════════
+       NODES VIEW
+  ══════════════════════════════════════ -->
+  <div id="nodes-view" class="view" style="display:none;">
+    <div class="view-bar">
+      <button type="button" id="nodes-refresh">Refresh</button>
+      <span id="nodes-count"></span>
+    </div>
+    <div id="nodes-error" class="err-banner"></div>
+    <div class="panels" id="nodes-panels">
+      <div class="panel-left" id="nodes-panel-left">
+        <div class="panel-title">Nodes</div>
+        <div class="panel-body" style="padding:0;">
+          <div id="nodes-loading" class="loading-msg">Loading nodes…</div>
+          <div class="table-wrap" id="nodes-table-wrap" style="display:none;">
+            <table id="nodes-table">
+              <thead>
+                <tr>
+                  <th data-ncol="0">Node Name <span class="arrow" id="narrow-0"></span></th>
+                  <th data-ncol="1">State <span class="arrow" id="narrow-1"></span></th>
+                  <th data-ncol="2">CPUs (A/I/O/T) <span class="arrow" id="narrow-2"></span></th>
+                  <th data-ncol="3">Mem (GB) <span class="arrow" id="narrow-3"></span></th>
+                  <th data-ncol="4">Free Mem (GB) <span class="arrow" id="narrow-4"></span></th>
+                  <th data-ncol="5">GRES <span class="arrow" id="narrow-5"></span></th>
+                  <th data-ncol="6">Partitions <span class="arrow" id="narrow-6"></span></th>
+                  <th data-ncol="7">CPU Load <span class="arrow" id="narrow-7"></span></th>
+                  <th data-ncol="8">Features <span class="arrow" id="narrow-8"></span></th>
+                  <th data-ncol="9">Reason <span class="arrow" id="narrow-9"></span></th>
+                </tr>
+                <tr class="filter-row">
+                  <td><input type="text" id="nfilter-name"      placeholder="All" title="Filter by node name"></td>
+                  <td><select id="nfilter-state" title="Filter by state"><option value="">All</option></select></td>
+                  <td></td><td></td><td></td><td></td>
+                  <td><select id="nfilter-partition" title="Filter by partition"><option value="">All</option></select></td>
+                  <td></td><td></td><td></td>
+                </tr>
+              </thead>
+              <tbody id="nodes-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="divider" id="nodes-divider"></div>
+      <div class="panel-right" id="nodes-panel-right">
+        <div class="panel-title">Node details</div>
+        <div class="panel-body">
+          <div id="node-detail-placeholder" class="detail-placeholder">Click a node to view details.</div>
+          <div id="node-detail-content" class="detail-content" style="display:none;">
+            <h2>Node <span id="node-detail-name"></span></h2>
+            <table class="node-kv" id="node-detail-kv"></table>
+          </div>
         </div>
       </div>
     </div>
-  </div>
+  </div><!-- /nodes-view -->
 
   <script>
     var API = '/api/v1';
+
+    // ══════════════════════════════════════
+    // Tab switching
+    // ══════════════════════════════════════
+    var nodesLoaded = false;
+
+    function switchTab(tab) {
+      var isJobs = tab === 'jobs';
+      document.getElementById('jobs-view').style.display  = isJobs ? '' : 'none';
+      document.getElementById('nodes-view').style.display = isJobs ? 'none' : '';
+      document.getElementById('tab-jobs').classList.toggle('active', isJobs);
+      document.getElementById('tab-nodes').classList.toggle('active', !isJobs);
+      if (isJobs) {
+        applySplit();
+      } else {
+        if (!nodesLoaded) loadNodes();
+        applyNodesSplit();
+      }
+    }
+
+    // ══════════════════════════════════════
+    // ── JOBS ──
+    // ══════════════════════════════════════
     var allJobs = [];
     var sortCol = 0;
-    var sortDir = -1; // default: latest job IDs first
+    var sortDir = -1;
     var FILTER_STORAGE_KEY = 'simple_slurm_dashboard_filters_v1';
     var currentJobId = null;
-    var currentUser = null;
+    var currentUser  = null;
     var initialUserFromUrl = null;
-    var SPLIT_STORAGE_KEY = 'simple_slurm_dashboard_split_v1';
-    var splitRatio = 0.5; // fraction of total width for left panel
+    var SPLIT_STORAGE_KEY  = 'simple_slurm_dashboard_split_v1';
+    var splitRatio = 0.5;
 
     (function initUserFromUrl() {
       try {
         var params = new URLSearchParams(window.location.search || '');
         var u = params.get('userid');
-        if (u) {
-          initialUserFromUrl = u;
-        }
-      } catch (e) {
-        // ignore
-      }
+        if (u) initialUserFromUrl = u;
+      } catch (e) {}
     })();
 
     (function loadSplitFromStorage() {
       try {
         var raw = localStorage.getItem(SPLIT_STORAGE_KEY);
-        if (raw) {
-          var r = parseFloat(raw);
-          if (!isNaN(r) && r > 0.1 && r < 0.9) {
-            splitRatio = r;
-          }
-        }
-      } catch (e) {
-        // ignore
-      }
+        if (raw) { var r = parseFloat(raw); if (!isNaN(r) && r > 0.1 && r < 0.9) splitRatio = r; }
+      } catch (e) {}
     })();
 
     function loadFilterStateFromStorage() {
-      try {
-        var raw = localStorage.getItem(FILTER_STORAGE_KEY);
-        return raw ? JSON.parse(raw) : null;
-      } catch (e) {
-        return null;
-      }
+      try { var raw = localStorage.getItem(FILTER_STORAGE_KEY); return raw ? JSON.parse(raw) : null; }
+      catch (e) { return null; }
     }
 
     function saveFilterState() {
       try {
         var userSelect = document.getElementById('user-select');
-        var state = {
+        localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify({
           jobid: document.getElementById('filter-jobid').value || '',
-          name: document.getElementById('filter-name').value || '',
-          status: document.getElementById('filter-status').value || '',
-          node: document.getElementById('filter-node').value || '',
+          name:  document.getElementById('filter-name').value  || '',
+          status:document.getElementById('filter-status').value|| '',
+          node:  document.getElementById('filter-node').value  || '',
           userSelection: userSelect ? userSelect.value || '' : ''
-        };
-        localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(state));
-      } catch (e) {
-        // ignore storage errors
-      }
+        }));
+      } catch (e) {}
     }
 
     var savedFilters = loadFilterStateFromStorage();
 
     function applySplit() {
-      var container = document.getElementById('panels');
-      var left = document.getElementById('panel-left');
-      var right = document.getElementById('panel-right');
-      var divider = document.getElementById('divider');
+      var container   = document.getElementById('panels');
+      var left        = document.getElementById('panel-left');
+      var right       = document.getElementById('panel-right');
+      var divider     = document.getElementById('divider');
       if (!container || !left || !right) return;
       var total = container.clientWidth;
       if (!total) return;
-      var dividerWidth = divider ? divider.offsetWidth : 4;
-      var minWidth = 200;
-      var leftWidth = splitRatio * total;
-      leftWidth = Math.max(minWidth, Math.min(total - minWidth - dividerWidth, leftWidth));
-      left.style.width = leftWidth + 'px';
-      right.style.width = (total - leftWidth - dividerWidth) + 'px';
+      var dw = divider ? divider.offsetWidth : 4;
+      var min = 200;
+      var lw = Math.max(min, Math.min(total - min - dw, splitRatio * total));
+      left.style.width  = lw + 'px';
+      right.style.width = (total - lw - dw) + 'px';
     }
 
+    (function enableDividerDrag() {
+      var container = document.getElementById('panels');
+      var divider   = document.getElementById('divider');
+      var left      = document.getElementById('panel-left');
+      if (!container || !divider || !left) return;
+      var dragging = false, startX = 0, startW = 0;
+      divider.addEventListener('mousedown', function (e) {
+        dragging = true; startX = e.clientX; startW = left.getBoundingClientRect().width;
+        document.body.style.userSelect = 'none';
+      });
+      window.addEventListener('mousemove', function (e) {
+        if (!dragging) return;
+        var total = container.clientWidth;
+        if (!total) return;
+        var dw = divider.offsetWidth || 4, min = 200;
+        var nw = Math.max(min, Math.min(total - min - dw, startW + e.clientX - startX));
+        splitRatio = nw / total; applySplit();
+      });
+      window.addEventListener('mouseup', function () {
+        if (!dragging) return;
+        dragging = false;
+        document.body.style.userSelect = '';
+        try { localStorage.setItem(SPLIT_STORAGE_KEY, String(splitRatio)); } catch (e) {}
+      });
+    })();
+
     function getCellVal(job, col) {
-      var j = job.jobid !== undefined ? job : {
-        jobid: job.JOBID,
-        name: job.NAME,
-        st: job.ST,
-        start: job.START,
-        end: job.END,
-        time: job.TIME,
-        partition: job.PARTITION
-      };
-      var v = ['jobid', 'name', 'st', 'start', 'end', 'time', 'partition'][col];
-      var val = j[v] || '';
-      return String(val).toLowerCase();
+      var j = job.jobid !== undefined ? job : { jobid: job.JOBID, name: job.NAME, st: job.ST, start: job.START, end: job.END, time: job.TIME, partition: job.PARTITION };
+      var v = ['jobid','name','st','start','end','time','partition'][col];
+      return String(j[v] || '').toLowerCase();
     }
 
     function applyFiltersAndSort() {
-      var jobid = (document.getElementById('filter-jobid').value || '').toLowerCase();
-      var name = (document.getElementById('filter-name').value || '').toLowerCase();
+      var jobid  = (document.getElementById('filter-jobid').value  || '').toLowerCase();
+      var name   = (document.getElementById('filter-name').value   || '').toLowerCase();
       var status = (document.getElementById('filter-status').value || '').toLowerCase();
-      var node = (document.getElementById('filter-node').value || '').toLowerCase();
+      var node   = (document.getElementById('filter-node').value   || '').toLowerCase();
       var list = allJobs.filter(function (job) {
-        if (jobid && getCellVal(job, 0).indexOf(jobid) === -1) return false;
-        if (name && getCellVal(job, 1).indexOf(name) === -1) return false;
-        if (status && getCellVal(job, 2) !== status) return false;
-        if (node && getCellVal(job, 6).indexOf(node) === -1) return false;
+        if (jobid  && getCellVal(job,0).indexOf(jobid)  === -1) return false;
+        if (name   && getCellVal(job,1).indexOf(name)   === -1) return false;
+        if (status && getCellVal(job,2) !== status)             return false;
+        if (node   && getCellVal(job,6).indexOf(node)   === -1) return false;
         return true;
       });
       list.sort(function (a, b) {
-        var va = getCellVal(a, sortCol);
-        var vb = getCellVal(b, sortCol);
-        var cmp;
-        if (sortCol === 0) {
-          // Sort Job ID numerically when possible so larger IDs (newer jobs)
-          // appear first when sortDir === -1.
-          var na = parseInt(va, 10);
-          var nb = parseInt(vb, 10);
-          if (isNaN(na) || isNaN(nb)) {
-            cmp = va < vb ? -1 : va > vb ? 1 : 0;
-          } else {
-            cmp = na < nb ? -1 : na > nb ? 1 : 0;
-          }
-        } else {
-          cmp = va < vb ? -1 : va > vb ? 1 : 0;
-        }
+        var va = getCellVal(a, sortCol), vb = getCellVal(b, sortCol), cmp;
+        if (sortCol === 0) { var na = parseInt(va,10), nb = parseInt(vb,10); cmp = (isNaN(na)||isNaN(nb)) ? (va<vb?-1:va>vb?1:0) : (na<nb?-1:na>nb?1:0); }
+        else               { cmp = va < vb ? -1 : va > vb ? 1 : 0; }
         return sortDir * cmp;
       });
       return list;
     }
 
-    (function enableDividerDrag() {
-      var container = document.getElementById('panels');
-      var divider = document.getElementById('divider');
-      var left = document.getElementById('panel-left');
-      if (!container || !divider || !left) return;
-      var isDragging = false;
-      var startX = 0;
-      var startLeftWidth = 0;
-
-      divider.addEventListener('mousedown', function (e) {
-        isDragging = true;
-        startX = e.clientX;
-        startLeftWidth = left.getBoundingClientRect().width;
-        document.body.style.userSelect = 'none';
-      });
-
-      window.addEventListener('mousemove', function (e) {
-        if (!isDragging) return;
-        var dx = e.clientX - startX;
-        var total = container.clientWidth;
-        if (!total) return;
-        var dividerWidth = divider.offsetWidth || 4;
-        var minWidth = 200;
-        var newLeft = startLeftWidth + dx;
-        newLeft = Math.max(minWidth, Math.min(total - minWidth - dividerWidth, newLeft));
-        splitRatio = newLeft / total;
-        applySplit();
-      });
-
-      window.addEventListener('mouseup', function () {
-        if (!isDragging) return;
-        isDragging = false;
-        document.body.style.userSelect = '';
-        try {
-          localStorage.setItem(SPLIT_STORAGE_KEY, String(splitRatio));
-        } catch (e) {
-          // ignore
-        }
-      });
-    })();
-
     function updateSortArrows() {
       for (var c = 0; c <= 6; c++) {
         var span = document.getElementById('arrow-' + c);
-        span.textContent = c === sortCol ? (sortDir === 1 ? '\u25B2' : '\u25BC') : '';
+        if (span) span.textContent = c === sortCol ? (sortDir === 1 ? '▲' : '▼') : '';
       }
     }
 
-    function showError(msg) {
-      var el = document.getElementById('error');
-      el.textContent = msg;
-      el.style.display = 'block';
-    }
-    function hideError() {
-      document.getElementById('error').style.display = 'none';
-    }
+    function showError(msg) { var el=document.getElementById('error'); el.textContent=msg; el.style.display='block'; }
+    function hideError()    { document.getElementById('error').style.display='none'; }
+
     function setLoading(on) {
-      document.getElementById('loading').style.display = on ? 'block' : 'none';
-      document.getElementById('table-wrap').style.display = on ? 'none' : 'block';
+      document.getElementById('loading').style.display    = on ? 'block' : 'none';
+      document.getElementById('table-wrap').style.display = on ? 'none'  : 'block';
       document.getElementById('refresh').disabled = on;
     }
 
     function setSelectedRow(row) {
       var tbody = document.getElementById('tbody');
-      for (var i = 0; i < tbody.rows.length; i++) tbody.rows[i].classList.remove('selected');
+      for (var i=0;i<tbody.rows.length;i++) tbody.rows[i].classList.remove('selected');
       if (row) row.classList.add('selected');
     }
 
@@ -313,37 +388,23 @@
       document.getElementById('count').textContent = list.length + ' job(s)';
       list.forEach(function (job) {
         var tr = document.createElement('tr');
-        var j = job.jobid !== undefined ? job : {
-          jobid: job.JOBID,
-          name: job.NAME,
-          user: job.USER,
-          st: job.ST,
-          start: job.START,
-          end: job.END,
-          time: job.TIME,
-          partition: job.PARTITION,
-          nodelist: job.NODELIST || job['nodelist(reason)']
-        };
+        var j = job.jobid !== undefined ? job : { jobid:job.JOBID, name:job.NAME, user:job.USER, st:job.ST, start:job.START, end:job.END, time:job.TIME, partition:job.PARTITION, nodelist:job.NODELIST||job['nodelist(reason)'] };
         tr.dataset.jobId = j.jobid;
         var st = (j.st || '').toUpperCase();
         tr.innerHTML =
-          '<td>' + (j.jobid || '') + '</td>' +
-          '<td>' + (j.name || '') + '</td>' +
+          '<td>' + (j.jobid||'') + '</td>' +
+          '<td>' + (j.name||'')  + '</td>' +
           '<td><span class="status ' + st + '">' + st + '</span></td>' +
-          '<td>' + (j.start || '') + '</td>' +
-          '<td>' + (j.end || '') + '</td>' +
-          '<td>' + (j.time || '') + '</td>' +
-          '<td>' + (j.partition || '') + '</td>';
-
-        // Commands cell: Cancel, Command, StdOut (if not pending), StdErr (if not pending)
+          '<td>' + (j.start||'') + '</td>' +
+          '<td>' + (j.end||'')   + '</td>' +
+          '<td>' + (j.time||'')  + '</td>' +
+          '<td>' + (j.partition||'') + '</td>';
         var cmdTd = document.createElement('td');
         cmdTd.className = 'cmd-cell';
         var isPending = st === 'PD';
         function addCmdBtn(label, kind) {
           var b = document.createElement('button');
-          b.type = 'button';
-          b.className = 'cmd-btn';
-          b.textContent = label;
+          b.type = 'button'; b.className = 'cmd-btn'; b.textContent = label;
           b.addEventListener('click', function (ev) {
             ev.stopPropagation();
             currentJobId = j.jobid;
@@ -356,58 +417,39 @@
           cmdTd.appendChild(b);
         }
         var cancelBtn = document.createElement('button');
-        cancelBtn.type = 'button';
-        cancelBtn.className = 'cmd-btn';
-        cancelBtn.textContent = 'Cancel';
-        cancelBtn.addEventListener('click', function (ev) {
-          ev.stopPropagation();
-          onCancelJob(j.jobid);
-        });
+        cancelBtn.type='button'; cancelBtn.className='cmd-btn'; cancelBtn.textContent='Cancel';
+        cancelBtn.addEventListener('click', function (ev) { ev.stopPropagation(); onCancelJob(j.jobid); });
         cmdTd.appendChild(cancelBtn);
-        addCmdBtn('Command', 'command');
-        if (!isPending) {
-          addCmdBtn('StdOut', 'stdout');
-          addCmdBtn('StdErr', 'stderr');
-        }
+        addCmdBtn('Command','command');
+        if (!isPending) { addCmdBtn('StdOut','stdout'); addCmdBtn('StdErr','stderr'); }
         tr.appendChild(cmdTd);
-
         tr.addEventListener('click', function () { showDetail(tr.dataset.jobId, tr); });
         tbody.appendChild(tr);
       });
       updateSortArrows();
     }
 
-    function refreshTable() {
-      var list = applyFiltersAndSort();
-      renderTableBody(list);
-    }
+    function refreshTable() { renderTableBody(applyFiltersAndSort()); }
 
     function populateFilterDropdowns() {
       var statuses = {};
-      allJobs.forEach(function (job) {
-        var s = (job.st || job.ST || '').toUpperCase().trim();
-        if (s) statuses[s] = true;
-      });
+      allJobs.forEach(function (job) { var s=(job.st||job.ST||'').toUpperCase().trim(); if(s) statuses[s]=true; });
       var statusSel = document.getElementById('filter-status');
       statusSel.innerHTML = '<option value="">All</option>';
-      Object.keys(statuses).sort().forEach(function (s) { statusSel.appendChild(new Option(s, s)); });
+      Object.keys(statuses).sort().forEach(function (s) { statusSel.appendChild(new Option(s,s)); });
     }
 
     function onDataLoaded(data) {
       allJobs = Array.isArray(data) ? data : [];
       populateFilterDropdowns();
-
-      // Reapply saved filter selections (including user/status) if available
       if (savedFilters) {
         document.getElementById('filter-jobid').value = savedFilters.jobid || '';
-        document.getElementById('filter-name').value = savedFilters.name || '';
-        document.getElementById('filter-node').value = savedFilters.node || '';
+        document.getElementById('filter-name').value  = savedFilters.name  || '';
+        document.getElementById('filter-node').value  = savedFilters.node  || '';
         var statusSel = document.getElementById('filter-status');
-        if (statusSel && savedFilters.status && Array.prototype.some.call(statusSel.options, function (o) { return o.value === savedFilters.status; })) {
+        if (statusSel && savedFilters.status && Array.prototype.some.call(statusSel.options, function(o){return o.value===savedFilters.status;}))
           statusSel.value = savedFilters.status;
-        }
       }
-
       document.getElementById('detail-placeholder').style.display = 'block';
       document.getElementById('detail-content').style.display = 'none';
       setSelectedRow(null);
@@ -417,190 +459,538 @@
     }
 
     function buildJobsUrl() {
-      var u = currentUser;
-      var qs = [];
+      var u = currentUser, qs = [];
       if (u) qs.push('user=' + encodeURIComponent(u));
-      var url = API + '/jobs';
-      if (qs.length) url += '?' + qs.join('&');
-      return url;
+      return API + '/jobs' + (qs.length ? '?' + qs.join('&') : '');
     }
 
     function loadJobs() {
-      hideError();
-      setLoading(true);
+      hideError(); setLoading(true);
       fetch(buildJobsUrl())
-        .then(function (r) { if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.json(); })
-        .then(function (data) {
-          onDataLoaded(data);
-          setLoading(false);
-        })
-        .catch(function (e) {
-          // If jobs cannot be loaded (e.g. invalid user), just show an empty list
-          allJobs = [];
-          document.getElementById('count').textContent = '0 job(s)';
-          setSelectedRow(null);
-          refreshTable();
-          // Do not treat this as a fatal error in the UI
-          setLoading(false);
-        });
+        .then(function(r){ if(!r.ok) throw new Error(r.status+' '+r.statusText); return r.json(); })
+        .then(function(data){ onDataLoaded(data); setLoading(false); })
+        .catch(function(){ allJobs=[]; document.getElementById('count').textContent='0 job(s)'; setSelectedRow(null); refreshTable(); setLoading(false); });
     }
 
     function showDetail(jobId, row) {
-      setSelectedRow(row || null);
+      setSelectedRow(row||null);
       document.getElementById('detail-placeholder').style.display = 'none';
       document.getElementById('detail-content').style.display = 'block';
       currentJobId = jobId;
       document.getElementById('detail-id').textContent = jobId;
       document.getElementById('detail-body').textContent = 'Loading…';
       fetch(API + '/jobs/' + encodeURIComponent(jobId))
-        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-        .then(function (data) {
-          document.getElementById('detail-body').textContent = JSON.stringify(data, null, 2);
-        })
-        .catch(function () {
-          document.getElementById('detail-body').textContent = 'Could not load job details.';
-        });
+        .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function(data){ document.getElementById('detail-body').textContent = JSON.stringify(data,null,2); })
+        .catch(function(){ document.getElementById('detail-body').textContent = 'Could not load job details.'; });
     }
 
     function loadJobFile(kind) {
-      if (!currentJobId) {
-        showError('No job selected.');
-        return;
-      }
+      if (!currentJobId) { showError('No job selected.'); return; }
       hideError();
       document.getElementById('detail-placeholder').style.display = 'none';
       document.getElementById('detail-content').style.display = 'block';
-      var label = kind === 'command' ? 'Command' : (kind === 'stdout' ? 'StdOut' : 'StdErr');
+      var label = kind==='command' ? 'Command' : (kind==='stdout' ? 'StdOut' : 'StdErr');
       document.getElementById('detail-body').textContent = 'Loading ' + label + '…';
       fetch(API + '/jobs/' + encodeURIComponent(currentJobId) + '/' + kind)
-        .then(function (r) {
-          if (!r.ok) {
-            return r.text().then(function (txt) {
-              throw new Error(txt || (r.status + ' ' + r.statusText));
-            });
-          }
-          return r.text();
-        })
-        .then(function (text) {
-          document.getElementById('detail-body').textContent = text;
-        })
-        .catch(function (e) {
-          showError('Failed to load ' + label + ' for job ' + currentJobId + ': ' + e.message);
-        });
+        .then(function(r){ if(!r.ok) return r.text().then(function(t){ throw new Error(t||(r.status+' '+r.statusText)); }); return r.text(); })
+        .then(function(text){ document.getElementById('detail-body').textContent = text; })
+        .catch(function(e){ showError('Failed to load ' + label + ' for job ' + currentJobId + ': ' + e.message); });
     }
 
     function updateCancelAllUserButtonVisibility() {
       var userSel = document.getElementById('user-select');
-      var btn = document.getElementById('btn-cancel-all-user');
-      if (btn && userSel) btn.style.display = (userSel.value || '').trim() ? '' : 'none';
+      var btn     = document.getElementById('btn-cancel-all-user');
+      if (btn && userSel) btn.style.display = (userSel.value||'').trim() ? '' : 'none';
     }
 
     function onCancelJob(jobId) {
       if (!jobId) return;
-      var ok = window.confirm('Cancel job ' + jobId + '?');
-      if (!ok) return;
+      if (!window.confirm('Cancel job ' + jobId + '?')) return;
       hideError();
-      fetch(API + '/jobs/' + encodeURIComponent(jobId), {
-        method: 'DELETE'
-      })
-        .then(function (r) {
-          if (!r.ok) {
-            return r.json().catch(function () { return {}; }).then(function (body) {
-              var msg = body && body.detail ? body.detail : (r.status + ' ' + r.statusText);
-              throw new Error(msg);
-            });
-          }
-          return r.json();
-        })
-        .then(function () {
-          loadJobs();
-        })
-        .catch(function (e) {
-          showError('Failed to cancel job ' + jobId + ': ' + e.message);
-        });
+      fetch(API + '/jobs/' + encodeURIComponent(jobId), { method:'DELETE' })
+        .then(function(r){ if(!r.ok) return r.json().catch(function(){return{};}).then(function(b){ throw new Error(b&&b.detail?b.detail:(r.status+' '+r.statusText)); }); return r.json(); })
+        .then(function(){ loadJobs(); })
+        .catch(function(e){ showError('Failed to cancel job ' + jobId + ': ' + e.message); });
     }
 
-    document.getElementById('refresh').addEventListener('click', function () {
-      loadJobs();
-    });
-    ['filter-jobid', 'filter-name', 'filter-status', 'filter-node'].forEach(function (id) {
+    document.getElementById('refresh').addEventListener('click', loadJobs);
+    ['filter-jobid','filter-name','filter-status','filter-node'].forEach(function(id){
       var el = document.getElementById(id);
-      if (el) el.addEventListener('input', function () { refreshTable(); saveFilterState(); updateCancelAllUserButtonVisibility(); });
-      if (el && el.tagName === 'SELECT') el.addEventListener('change', function () { refreshTable(); saveFilterState(); updateCancelAllUserButtonVisibility(); });
+      if (el) { el.addEventListener('input', function(){ refreshTable(); saveFilterState(); updateCancelAllUserButtonVisibility(); }); }
+      if (el && el.tagName==='SELECT') { el.addEventListener('change', function(){ refreshTable(); saveFilterState(); updateCancelAllUserButtonVisibility(); }); }
     });
-    document.querySelectorAll('#table thead tr:first-child th').forEach(function (th) {
-      th.addEventListener('click', function () {
+    document.querySelectorAll('#table thead tr:first-child th').forEach(function(th){
+      th.addEventListener('click', function(){
         var col = parseInt(th.getAttribute('data-col'), 10);
         if (col === sortCol) sortDir = -sortDir; else { sortCol = col; sortDir = 1; }
         refreshTable();
       });
     });
-    document.getElementById('btn-cancel-all-user').addEventListener('click', function () {
+    document.getElementById('btn-cancel-all-user').addEventListener('click', function(){
       var userSel = document.getElementById('user-select');
       var user = (userSel && userSel.value || '').trim();
       if (!user) return;
-      var n = applyFiltersAndSort().length;
-      if (n === 0) return;
-      if (!window.confirm('Cancel all ' + n + ' job(s) for user "' + user + '"?')) return;
-      hideError();
       var list = applyFiltersAndSort();
-      var jobIds = list.map(function (job) { return job.JOBID !== undefined ? job.JOBID : job.jobid; }).filter(Boolean);
+      if (list.length === 0) return;
+      if (!window.confirm('Cancel all ' + list.length + ' job(s) for user "' + user + '"?')) return;
+      hideError();
+      var jobIds = list.map(function(j){ return j.JOBID!==undefined ? j.JOBID : j.jobid; }).filter(Boolean);
       var i = 0;
       function cancelNext() {
         if (i >= jobIds.length) { loadJobs(); return; }
         var jid = jobIds[i++];
-        fetch(API + '/jobs/' + encodeURIComponent(jid), { method: 'DELETE' })
-          .then(function (r) { if (!r.ok) return r.json().catch(function () { return {}; }); return r.json(); })
-          .then(function () { cancelNext(); })
-          .catch(function () { cancelNext(); });
+        fetch(API+'/jobs/'+encodeURIComponent(jid),{method:'DELETE'})
+          .then(function(r){ if(!r.ok) return r.json().catch(function(){return{};}); return r.json(); })
+          .then(cancelNext).catch(cancelNext);
       }
       cancelNext();
     });
 
     function loadUsersAndThenJobs() {
       fetch(API + '/jobs/users')
-        .then(function (r) { if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.json(); })
-        .then(function (users) {
+        .then(function(r){ if(!r.ok) throw new Error(r.status+' '+r.statusText); return r.json(); })
+        .then(function(users){
           var sel = document.getElementById('user-select');
           sel.innerHTML = '';
-          (users || []).forEach(function (u) {
-            sel.appendChild(new Option(u, u));
-          });
-
-          // Determine initial user: URL param > saved selection > first in list
+          (users||[]).forEach(function(u){ sel.appendChild(new Option(u,u)); });
           var chosen = null;
-          if (initialUserFromUrl && users.indexOf(initialUserFromUrl) !== -1) {
-            chosen = initialUserFromUrl;
-          } else if (savedFilters && savedFilters.userSelection && users.indexOf(savedFilters.userSelection) !== -1) {
-            chosen = savedFilters.userSelection;
-          } else if (users.length > 0) {
-            chosen = users[0];
-          }
-
-          if (chosen) {
-            currentUser = chosen;
-            sel.value = chosen;
-          }
-
-          sel.addEventListener('change', function () {
-            currentUser = sel.value || null;
-            saveFilterState();
-            updateCancelAllUserButtonVisibility();
-            loadJobs();
-          });
-
+          if (initialUserFromUrl && users.indexOf(initialUserFromUrl)!==-1) chosen = initialUserFromUrl;
+          else if (savedFilters && savedFilters.userSelection && users.indexOf(savedFilters.userSelection)!==-1) chosen = savedFilters.userSelection;
+          else if (users.length > 0) chosen = users[0];
+          if (chosen) { currentUser = chosen; sel.value = chosen; }
+          sel.addEventListener('change', function(){ currentUser = sel.value||null; saveFilterState(); updateCancelAllUserButtonVisibility(); loadJobs(); });
           updateCancelAllUserButtonVisibility();
           loadJobs();
         })
-        .catch(function (e) {
-          showError('Failed to load users: ' + e.message);
-          // Fallback to loading jobs without explicit user
-          loadJobs();
-        });
+        .catch(function(e){ showError('Failed to load users: ' + e.message); loadJobs(); });
     }
 
+    // ══════════════════════════════════════
+    // ── NODES ──
+    // ══════════════════════════════════════
+    var allNodes    = [];
+    var nodeSortCol = 0;
+    var nodeSortDir = 1;
+    var NODES_SPLIT_KEY = 'simple_slurm_nodes_split_v1';
+    var nodesSplitRatio = 0.55;
+
+    (function loadNodesSplitFromStorage() {
+      try { var r = parseFloat(localStorage.getItem(NODES_SPLIT_KEY)); if (!isNaN(r) && r>0.1 && r<0.9) nodesSplitRatio = r; } catch(e){}
+    })();
+
+    function applyNodesSplit() {
+      var container = document.getElementById('nodes-panels');
+      var left      = document.getElementById('nodes-panel-left');
+      var right     = document.getElementById('nodes-panel-right');
+      var divider   = document.getElementById('nodes-divider');
+      if (!container||!left||!right) return;
+      var total = container.clientWidth;
+      if (!total) return;
+      var dw = divider ? divider.offsetWidth : 4, min = 200;
+      var lw = Math.max(min, Math.min(total-min-dw, nodesSplitRatio*total));
+      left.style.width  = lw + 'px';
+      right.style.width = (total-lw-dw) + 'px';
+    }
+
+    (function enableNodesDividerDrag() {
+      var container = document.getElementById('nodes-panels');
+      var divider   = document.getElementById('nodes-divider');
+      var left      = document.getElementById('nodes-panel-left');
+      if (!container||!divider||!left) return;
+      var dragging=false, startX=0, startW=0;
+      divider.addEventListener('mousedown', function(e){ dragging=true; startX=e.clientX; startW=left.getBoundingClientRect().width; document.body.style.userSelect='none'; });
+      window.addEventListener('mousemove', function(e){
+        if(!dragging) return;
+        var total=container.clientWidth; if(!total) return;
+        var dw=divider.offsetWidth||4, min=200;
+        var nw=Math.max(min,Math.min(total-min-dw,startW+e.clientX-startX));
+        nodesSplitRatio=nw/total; applyNodesSplit();
+      });
+      window.addEventListener('mouseup', function(){
+        if(!dragging) return; dragging=false; document.body.style.userSelect='';
+        try{ localStorage.setItem(NODES_SPLIT_KEY,String(nodesSplitRatio)); }catch(e){}
+      });
+    })();
+
+    function nodeStateClass(state) {
+      var s = (state||'').toLowerCase().replace(/[^a-z]/g,'');
+      if (s==='idle')   return 'nstate-idle';
+      if (s==='mix')    return 'nstate-mix';
+      if (s==='alloc')  return 'nstate-alloc';
+      if (s==='down')   return 'nstate-down';
+      if (s==='drain'||s==='drng'||s==='drained') return 'nstate-drain';
+      if (s==='comp')   return 'nstate-comp';
+      if (s==='resv'||s==='maint') return 'nstate-resv';
+      return 'nstate-unk';
+    }
+
+    function getNodeCellVal(node, col) {
+      var keys = ['nodename','state','cpus','memory_mb','free_mem_mb','gres','partitions','cpu_load','features','reason'];
+      return String(node[keys[col]] || '').toLowerCase();
+    }
+
+    function applyNodesFiltersAndSort() {
+      var name  = (document.getElementById('nfilter-name').value      || '').toLowerCase();
+      var state = (document.getElementById('nfilter-state').value     || '').toLowerCase();
+      var part  = (document.getElementById('nfilter-partition').value || '').toLowerCase();
+      var list = allNodes.filter(function(n){
+        if (name  && getNodeCellVal(n,0).indexOf(name)  === -1) return false;
+        if (state && getNodeCellVal(n,1) !== state)             return false;
+        if (part  && getNodeCellVal(n,6).indexOf(part)  === -1) return false;
+        return true;
+      });
+      list.sort(function(a,b){
+        var va = getNodeCellVal(a,nodeSortCol), vb = getNodeCellVal(b,nodeSortCol);
+        // numeric sort for memory columns
+        if (nodeSortCol>=3 && nodeSortCol<=4) {
+          var na=parseFloat(va)||0, nb=parseFloat(vb)||0;
+          return nodeSortDir*(na-nb);
+        }
+        return nodeSortDir*(va<vb?-1:va>vb?1:0);
+      });
+      return list;
+    }
+
+    function updateNodesSortArrows() {
+      for (var c=0;c<=9;c++) {
+        var span = document.getElementById('narrow-'+c);
+        if (span) span.textContent = c===nodeSortCol ? (nodeSortDir===1?'▲':'▼') : '';
+      }
+    }
+
+    function showNodesError(msg) { var el=document.getElementById('nodes-error'); el.textContent=msg; el.style.display='block'; }
+    function hideNodesError()    { document.getElementById('nodes-error').style.display='none'; }
+
+    function setNodesLoading(on) {
+      document.getElementById('nodes-loading').style.display    = on ? 'block' : 'none';
+      document.getElementById('nodes-table-wrap').style.display = on ? 'none'  : 'block';
+      document.getElementById('nodes-refresh').disabled = on;
+    }
+
+    function setSelectedNodeRow(row) {
+      var tbody = document.getElementById('nodes-tbody');
+      for (var i=0;i<tbody.rows.length;i++) tbody.rows[i].classList.remove('selected');
+      if (row) row.classList.add('selected');
+    }
+
+    function populateNodesFilterDropdowns() {
+      var states = {}, parts = {};
+      allNodes.forEach(function(n){
+        var s=(n.state||'').toLowerCase().trim(); if(s) states[s]=true;
+        (n.partitions||'').split(',').forEach(function(p){ p=p.trim().replace(/\*/g,''); if(p) parts[p]=true; });
+      });
+      var stateSel = document.getElementById('nfilter-state');
+      var prevState = stateSel.value;
+      stateSel.innerHTML = '<option value="">All</option>';
+      Object.keys(states).sort().forEach(function(s){ stateSel.appendChild(new Option(s,s)); });
+      if (prevState && Array.prototype.some.call(stateSel.options,function(o){return o.value===prevState;})) stateSel.value=prevState;
+
+      var partSel = document.getElementById('nfilter-partition');
+      var prevPart = partSel.value;
+      partSel.innerHTML = '<option value="">All</option>';
+      Object.keys(parts).sort().forEach(function(p){ partSel.appendChild(new Option(p,p)); });
+      if (prevPart && Array.prototype.some.call(partSel.options,function(o){return o.value===prevPart;})) partSel.value=prevPart;
+    }
+
+    // ── memory helpers ──
+    // Fields from scontrol show node that hold MB values
+    var NODE_MB_FIELDS = { RealMemory:1, AllocMem:1, FreeMem:1, MemSpecLimit:1 };
+    // Fields from partition detail that hold MB values (may also be "UNLIMITED")
+    var PART_MB_FIELDS = { MemoryMB:1, MaxMemPerNode:1, DefMemPerNode:1 };
+
+    function mbToGb(val) {
+      if (!val && val !== 0) return '—';
+      var s = String(val).trim();
+      if (!s || s === 'N/A' || s.toUpperCase() === 'UNLIMITED' || s === '0') return s || '—';
+      var mb = parseFloat(s);
+      if (isNaN(mb)) return s;
+      return (mb / 1024).toFixed(1) + ' GB';
+    }
+
+    function renderNodesTable() {
+      var list = applyNodesFiltersAndSort();
+      var tbody = document.getElementById('nodes-tbody');
+      tbody.innerHTML = '';
+      document.getElementById('nodes-count').textContent = list.length + ' node(s)';
+      list.forEach(function(node){
+        var tr = document.createElement('tr');
+        tr.dataset.nodeName = node.nodename;
+        var sc = nodeStateClass(node.state);
+        var cleanGres  = (node.gres||'').replace(/\(null\)/g,'—') || '—';
+        var reason     = (node.reason||'none').trim() || '—';
+        var cpuLoad    = (node.cpu_load||'N/A').trim();
+        var features   = (node.features||'').trim() || '—';
+        tr.innerHTML =
+          '<td style="font-family:monospace;">' + (node.nodename||'') + '</td>' +
+          '<td><span class="nstate ' + sc + '">' + (node.state||'') + '</span></td>' +
+          '<td style="font-family:monospace;">' + (node.cpus||'') + '</td>' +
+          '<td style="text-align:right;">' + mbToGb(node.memory_mb) + '</td>' +
+          '<td style="text-align:right;">' + mbToGb(node.free_mem_mb) + '</td>' +
+          '<td>' + cleanGres + '</td>' +
+          '<td>' + (node.partitions||'').replace(/\*/g,'') + '</td>' +
+          '<td style="text-align:right;">' + cpuLoad + '</td>' +
+          '<td style="color:#71717a;font-size:0.8rem;">' + features + '</td>' +
+          '<td style="color:#a1a1aa;font-size:0.8rem;">' + reason + '</td>';
+        tr.addEventListener('click', function(){ showNodeDetail(node.nodename, tr); });
+        tbody.appendChild(tr);
+      });
+      updateNodesSortArrows();
+    }
+
+    // ── property description tooltips ──
+    var NODE_PROP_DESCRIPTIONS = {
+      NodeName:           'The hostname of this compute node',
+      Arch:               'CPU architecture (e.g. x86_64)',
+      CoresPerSocket:     'Number of CPU cores per socket',
+      CPUAlloc:           'Number of CPUs currently allocated to running jobs',
+      CPUErr:             'Number of CPUs in an error state',
+      CPUTot:             'Total logical CPUs on this node (sockets × cores × threads)',
+      CPULoad:            '1-minute CPU load average reported by the OS',
+      AvailableFeatures:  'All features defined for scheduling constraints on this node',
+      ActiveFeatures:     'Features currently active (may differ from available after reboot)',
+      Gres:               'Generic resources configured on this node (e.g. gpu:A100:4)',
+      GresUsed:           'Generic resources currently consumed by running jobs',
+      NodeAddr:           'Network address used to contact slurmd on this node',
+      NodeHostName:       'DNS hostname of this node',
+      Version:            'Slurm version running on this node',
+      OS:                 'Operating system kernel version',
+      RealMemory:         'Total memory available to jobs on this node (displayed in GB)',
+      AllocMem:           'Memory currently allocated to running jobs (displayed in GB)',
+      FreeMem:            'Current free memory as reported by the OS (displayed in GB)',
+      MemSpecLimit:       'Memory reserved for OS/system use, unavailable to jobs (displayed in GB)',
+      Sockets:            'Number of physical CPU sockets on this node',
+      Boards:             'Number of baseboards / NUMA domains',
+      State:              'Current node state: idle / mix / alloc / down / drain / …',
+      ThreadsPerCore:     'Hardware threads per core (SMT / HyperThreading)',
+      TmpDisk:            'Scratch disk space (MB) available under TmpFS',
+      Weight:             'Scheduling weight — lower values are preferred over higher',
+      Owner:              'User that owns this node (restricts scheduling when set)',
+      MCS_label:          'Multi-Category Security label for the node',
+      Partitions:         'Partitions this node belongs to',
+      BootTime:           'Wall-clock time when this node last booted',
+      SlurmdStartTime:    'Wall-clock time when the slurmd daemon last started',
+      CfgTRES:            'Trackable resources configured on this node (CPUs, memory, GRES, …)',
+      AllocTRES:          'Trackable resources currently allocated to jobs',
+      CapWatts:           'Configured power cap in watts (n/a if not set)',
+      CurrentWatts:       'Instantaneous power draw in watts',
+      AveWatts:           'Rolling average power draw in watts',
+      ExtSensorsJoules:   'Energy reported by external sensors (joules)',
+      ExtSensorsWatts:    'Power reported by external sensors (watts)',
+      ExtSensorsTemp:     'Temperature reported by external sensors',
+      Reason:             'Reason the node is in a non-idle state (e.g. why it is down/drained)',
+      RunningJobs:        'Job IDs of jobs currently running on this node',
+      SelectTypeParameters: 'Parameters passed to the node-selection plugin',
+    };
+
+    // ── partition detail display fields ──
+    var PARTITION_DISPLAY_FIELDS = [
+      ['State',           'Partition availability (UP = accepting jobs, DOWN = not)'],
+      ['MaxTime',         'Maximum wall-clock time limit for jobs in this partition'],
+      ['DefaultTime',     'Default time limit applied when a job does not request one'],
+      ['TotalCPUs',       'Total CPU count across all nodes in this partition'],
+      ['TotalNodes',      'Total number of nodes in this partition'],
+      ['CPUsState',       'CPU allocation summary: Alloc / Idle / Other / Total'],
+      ['GresInfo',        'Generic resources (e.g. GPUs) available in this partition'],
+      ['MemoryMB',        'Memory per node (GB); range shown if nodes differ'],
+      ['MaxNodes',        'Maximum number of nodes a single job may request'],
+      ['MaxCPUsPerNode',  'Maximum CPUs a job may request per node'],
+      ['MaxMemPerNode',   'Maximum memory a job may request per node (GB)'],
+      ['DefMemPerNode',   'Default memory per node when not explicitly requested (GB)'],
+      ['AllowGroups',     'Unix groups permitted to submit jobs to this partition'],
+      ['AllowAccounts',   'Slurm accounts permitted to submit jobs'],
+      ['AllowQos',        'Quality-of-Service levels permitted in this partition'],
+      ['DenyAccounts',    'Accounts explicitly denied access to this partition'],
+      ['DenyQos',         'Quality-of-Service levels denied in this partition'],
+      ['OverSubscribe',   'Whether job step over-subscription is allowed'],
+      ['PreemptMode',     'Preemption mode (OFF / CANCEL / REQUEUE / SUSPEND)'],
+      ['PriorityTier',    'Scheduling priority tier (higher tier is preferred over lower)'],
+    ];
+
+    // ── render partition chips + expandable details ──
+    function renderPartitionsInCell(td, partitionsStr, nodeName) {
+      var partNames = (partitionsStr || '').split(',')
+        .map(function(p){ return p.trim().replace(/\*/g, ''); })
+        .filter(Boolean);
+
+      var wrap = document.createElement('div');
+
+      // Chips row
+      var chipsDiv = document.createElement('div');
+      chipsDiv.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.3rem;align-items:center;margin-bottom:0.35rem;';
+      partNames.forEach(function(pname) {
+        var chip = document.createElement('span');
+        chip.style.cssText = 'background:#27272a;border:1px solid #3f3f46;border-radius:4px;padding:0.15rem 0.45rem;font-size:0.8rem;font-family:monospace;';
+        chip.textContent = pname;
+        chipsDiv.appendChild(chip);
+      });
+      wrap.appendChild(chipsDiv);
+
+      if (partNames.length > 0) {
+        var btn = document.createElement('button');
+        btn.type = 'button'; btn.className = 'cmd-btn';
+        btn.textContent = 'Expand ▼';
+        wrap.appendChild(btn);
+
+        var detailDiv = document.createElement('div');
+        detailDiv.style.cssText = 'display:none;margin-top:0.6rem;';
+        wrap.appendChild(detailDiv);
+
+        var expanded = false, loaded = false;
+
+        btn.addEventListener('click', function() {
+          expanded = !expanded;
+          btn.textContent = expanded ? 'Collapse ▲' : 'Expand ▼';
+          detailDiv.style.display = expanded ? '' : 'none';
+
+          if (expanded && !loaded) {
+            loaded = true;
+            partNames.forEach(function(pname) {
+              var section = document.createElement('div');
+              section.className = 'part-section';
+
+              var header = document.createElement('div');
+              header.className = 'part-section-name';
+              header.textContent = pname;
+              section.appendChild(header);
+
+              var loadingMsg = document.createElement('div');
+              loadingMsg.style.cssText = 'color:#71717a;font-size:0.8125rem;';
+              loadingMsg.textContent = 'Loading…';
+              section.appendChild(loadingMsg);
+              detailDiv.appendChild(section);
+
+              fetch(API + '/partitions/' + encodeURIComponent(pname))
+                .then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
+                .then(function(data) {
+                  loadingMsg.remove();
+                  var ptable = document.createElement('table');
+                  ptable.className = 'node-kv';
+                  ptable.style.marginTop = '0.1rem';
+                  PARTITION_DISPLAY_FIELDS.forEach(function(field) {
+                    var fkey = field[0], fdesc = field[1];
+                    var val = data[fkey];
+                    if (val === undefined || val === null || val === '') return;
+                    var tr2 = document.createElement('tr');
+                    var ktd = document.createElement('td');
+                    ktd.textContent = fkey; ktd.title = fdesc; ktd.className = 'has-tooltip';
+                    var vtd = document.createElement('td');
+                    if (fkey === 'State') {
+                      var sp = document.createElement('span');
+                      sp.className = 'nstate ' + (val === 'UP' ? 'nstate-idle' : val === 'DOWN' ? 'nstate-down' : 'nstate-drain');
+                      sp.textContent = val;
+                      vtd.appendChild(sp);
+                    } else if (fkey === 'CPUsState') {
+                      var code = document.createElement('code');
+                      code.style.cssText = 'font-family:monospace;color:#bfdbfe;font-size:0.8125rem;';
+                      code.textContent = val + '  (A/I/O/T)';
+                      vtd.appendChild(code);
+                    } else if (PART_MB_FIELDS[fkey]) {
+                      vtd.textContent = mbToGb(val);
+                    } else {
+                      vtd.textContent = val;
+                    }
+                    tr2.appendChild(ktd); tr2.appendChild(vtd);
+                    ptable.appendChild(tr2);
+                  });
+                  section.appendChild(ptable);
+                })
+                .catch(function() {
+                  loadingMsg.style.color = '#fecaca';
+                  loadingMsg.textContent = 'Failed to load partition details.';
+                });
+            });
+          }
+        });
+      }
+
+      td.appendChild(wrap);
+    }
+
+    function showNodeDetail(nodeName, row) {
+      setSelectedNodeRow(row||null);
+      document.getElementById('node-detail-placeholder').style.display = 'none';
+      document.getElementById('node-detail-content').style.display = 'block';
+      document.getElementById('node-detail-name').textContent = nodeName;
+      var kv = document.getElementById('node-detail-kv');
+      kv.innerHTML = '<tr><td colspan="2" style="color:#71717a;">Loading…</td></tr>';
+      fetch(API + '/nodes/' + encodeURIComponent(nodeName))
+        .then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function(data) {
+          var priority = ['NodeName','Arch','OS','State','Reason','CPUTot','CPUAlloc','CPUErr','CPULoad','CoresPerSocket','ThreadsPerCore','Sockets','Boards','RealMemory','AllocMem','FreeMem','Gres','GresUsed','AvailableFeatures','ActiveFeatures','Partitions','BootTime','SlurmdStartTime','RunningJobs','CfgTRES','AllocTRES','Weight'];
+          var keys = priority.filter(function(k){ return data[k] !== undefined; });
+          Object.keys(data).sort().forEach(function(k){ if (priority.indexOf(k) === -1) keys.push(k); });
+          kv.innerHTML = '';
+          keys.forEach(function(k) {
+            var tr = document.createElement('tr');
+            var keyTd = document.createElement('td');
+            keyTd.textContent = k;
+            var desc = NODE_PROP_DESCRIPTIONS[k];
+            if (desc) { keyTd.title = desc; keyTd.className = 'has-tooltip'; }
+            var valTd = document.createElement('td');
+            if (k === 'State') {
+              var sp = document.createElement('span');
+              sp.className = 'nstate ' + nodeStateClass(data[k]);
+              sp.textContent = data[k];
+              valTd.appendChild(sp);
+            } else if (k === 'Partitions') {
+              renderPartitionsInCell(valTd, data[k], nodeName);
+            } else if (NODE_MB_FIELDS[k]) {
+              valTd.textContent = mbToGb(data[k]);
+            } else {
+              valTd.textContent = data[k];
+            }
+            tr.appendChild(keyTd);
+            tr.appendChild(valTd);
+            kv.appendChild(tr);
+          });
+        })
+        .catch(function(){ kv.innerHTML = '<tr><td colspan="2" style="color:#fecaca;">Could not load node details.</td></tr>'; });
+    }
+
+    function loadNodes() {
+      hideNodesError(); setNodesLoading(true);
+      fetch(API + '/nodes')
+        .then(function(r){ if(!r.ok) throw new Error(r.status+' '+r.statusText); return r.json(); })
+        .then(function(data){
+          allNodes = Array.isArray(data) ? data : [];
+          nodesLoaded = true;
+          populateNodesFilterDropdowns();
+          document.getElementById('node-detail-placeholder').style.display = 'block';
+          document.getElementById('node-detail-content').style.display = 'none';
+          setSelectedNodeRow(null);
+          renderNodesTable();
+          setNodesLoading(false);
+          applyNodesSplit();
+        })
+        .catch(function(e){ showNodesError('Failed to load nodes: ' + e.message); setNodesLoading(false); });
+    }
+
+    document.getElementById('nodes-refresh').addEventListener('click', function(){ nodesLoaded=false; loadNodes(); });
+
+    ['nfilter-name','nfilter-state','nfilter-partition'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('input',  function(){ renderNodesTable(); });
+      el.addEventListener('change', function(){ renderNodesTable(); });
+    });
+
+    document.querySelectorAll('#nodes-table thead tr:first-child th').forEach(function(th){
+      th.addEventListener('click', function(){
+        var col = parseInt(th.getAttribute('data-ncol'), 10);
+        if (col === nodeSortCol) nodeSortDir = -nodeSortDir; else { nodeSortCol=col; nodeSortDir=1; }
+        renderNodesTable();
+      });
+    });
+
+    // ══════════════════════════════════════
+    // Init
+    // ══════════════════════════════════════
     loadUsersAndThenJobs();
-    window.addEventListener('resize', applySplit);
+    window.addEventListener('resize', function(){
+      applySplit();
+      if (document.getElementById('nodes-view').style.display !== 'none') applyNodesSplit();
+    });
   </script>
 </body>
 </html>

@@ -119,6 +119,102 @@ def get_job(job_id):
         return job_details
 
 
+SINFO_NODE_FORMAT = "%N|%t|%C|%m|%e|%G|%f|%P|%R|%O"
+SINFO_NODE_FIELDS = ["nodename", "state", "cpus", "memory_mb", "free_mem_mb", "gres", "features", "partitions", "reason", "cpu_load"]
+
+
+def get_nodes() -> List[Dict[str, str]]:
+    """Get cluster node information from sinfo, one entry per node."""
+    cmd = f"sinfo -N --noheader -o '{SINFO_NODE_FORMAT}'"
+    output = run_command(cmd)
+    if not output:
+        return []
+    nodes_by_name: Dict[str, Dict[str, str]] = {}
+    for line in output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split("|", len(SINFO_NODE_FIELDS) - 1)
+        if len(parts) != len(SINFO_NODE_FIELDS):
+            continue
+        node = dict(zip(SINFO_NODE_FIELDS, parts))
+        name = node["nodename"]
+        if name in nodes_by_name:
+            # Node appears once per partition; merge partition list
+            existing = nodes_by_name[name]
+            existing_parts = set(p for p in existing["partitions"].split(",") if p)
+            new_parts = set(p for p in node["partitions"].split(",") if p)
+            existing["partitions"] = ",".join(sorted(existing_parts | new_parts))
+        else:
+            nodes_by_name[name] = node
+    return list(nodes_by_name.values())
+
+
+def get_node(node_name: str) -> Dict[str, str]:
+    """Get detailed info for a single node from scontrol show node."""
+    output = run_command(f"scontrol show node {node_name}")
+    node_details: Dict[str, str] = {}
+    for line in output.split("\n"):
+        for item in line.split():
+            if "=" in item:
+                key, _, value = item.partition("=")
+                node_details[key] = value
+    return node_details
+
+
+SINFO_PARTITION_FORMAT = "%C|%G|%m|%l"
+
+
+def get_partition(partition_name: str) -> Dict[str, str]:
+    """Get detailed info for a partition via scontrol show partition + sinfo."""
+    sc_output = run_command(f"scontrol show partition {partition_name}")
+    details: Dict[str, str] = {}
+    for line in sc_output.split("\n"):
+        for item in line.split():
+            if "=" in item:
+                key, _, value = item.partition("=")
+                details[key] = value
+    # Augment with sinfo: CPU allocation state, GRES, memory
+    try:
+        si_output = run_command(
+            f"sinfo -p {partition_name} --noheader -o '{SINFO_PARTITION_FORMAT}'"
+        )
+        si_lines = [ln.strip() for ln in si_output.splitlines() if ln.strip()]
+        if si_lines:
+            gres_set: set = set()
+            alloc = idle = other = total = 0
+            mem_vals: set = set()
+            timelimit = ""
+            for ln in si_lines:
+                parts = ln.split("|", 3)
+                if len(parts) < 4:
+                    continue
+                cpu_parts = parts[0].split("/")
+                if len(cpu_parts) == 4:
+                    try:
+                        alloc += int(cpu_parts[0])
+                        idle  += int(cpu_parts[1])
+                        other += int(cpu_parts[2])
+                        total += int(cpu_parts[3])
+                    except ValueError:
+                        pass
+                g = parts[1].strip()
+                if g and g.lower() != "(null)":
+                    gres_set.add(g)
+                m = parts[2].strip()
+                if m:
+                    mem_vals.add(m)
+                if not timelimit:
+                    timelimit = parts[3].strip()
+            details["CPUsState"] = f"{alloc}/{idle}/{other}/{total}"
+            details["GresInfo"] = ", ".join(sorted(gres_set)) if gres_set else "(none)"
+            if mem_vals:
+                details["MemoryMB"] = " / ".join(sorted(mem_vals))
+    except Exception:
+        pass
+    return details
+
+
 def cancel_job(job_id: str):
     command = f"scancel {job_id}"
     run_command(command)
