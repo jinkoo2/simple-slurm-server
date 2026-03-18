@@ -15,29 +15,35 @@ def run_command(command: str) -> str:
     If the modules system is still unavailable, we fall back to running the command
     without `module load slurm` (assuming Slurm tools are already on PATH).
     """
-    try:
-        full_command = f"module load slurm && {command}"
-        result = subprocess.run(
-            ["bash", "-lc", full_command],
+    def _run_bash_lc(cmd: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["bash", "-lc", cmd],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             check=True,
         )
+
+    full_command = f"module load slurm && {command}"
+    try:
+        result = _run_bash_lc(full_command)
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
         # If 'module' is not available in this shell environment, retry without it.
         stderr = (e.stderr or "").strip()
         if "module: command not found" in stderr:
-            result2 = subprocess.run(
-                ["bash", "-lc", command],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=True,
-            )
-            return result2.stdout.strip()
-        raise
+            try:
+                result2 = _run_bash_lc(command)
+                return result2.stdout.strip()
+            except subprocess.CalledProcessError as e2:
+                stderr2 = (e2.stderr or "").strip()
+                raise RuntimeError(
+                    f"Command failed: {command}\nexit_code={e2.returncode}\nstderr={stderr2}"
+                ) from e2
+
+        raise RuntimeError(
+            f"Command failed: {full_command}\nexit_code={e.returncode}\nstderr={stderr}"
+        ) from e
 
 
 # sacct fields:
